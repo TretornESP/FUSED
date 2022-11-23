@@ -5,20 +5,29 @@
 #define MAX_DRIVE_NAME_LENGTH 256
 
 struct mount {
-    char drive_name[MAX_DRIVE_NAME_LENGTH];
+    char mount_point[MAX_DRIVE_NAME_LENGTH];
     char file_name[MAX_FILE_NAME_LENGTH];
+#ifdef __EAGER
     u8  *file_ptr;
+#else
+    int file_handle;
+#endif
     u32  sector_size;
     u64  starting_sector;
     u64  sector_count;
     struct mount * next;
 };
 
+#ifdef __DEBUG_ENABLED
+//Debug only, deleteme
+void debug();
+#endif
+
 //Get the drive id from the mount point
-struct mount* get_drive(char *mount_point)
+struct mount* get_drive(const char *mount_point);
 
 //Register an entire file as a drive, size must be multiple of sector size
-void register_drive(const char * filename, const char* mount_point, u32 sector_size);
+void register_drive(const const char * filename, const char* mount_point, u32 sector_size);
 
 //Register a part of a file as a drive.
 void register_drive_subsection(const char* filename, const char* mount_point, u32 sector_size, u64 starting_sector, u64 sector_count);
