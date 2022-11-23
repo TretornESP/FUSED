@@ -25,7 +25,7 @@ For this you will have to:
 
 1. Set the config variables in `config.h` to your liking (comment them to disable)
 **Note:** `LAZY MODE (EAGER COMMENTED)` is unfinished
-2. (Optional) modify the stubs in `dependencies.h` and `dependencies.c` to suit your environment (they start by __fuse_)
+2. (Optional) modify the stubs in `dependencies.h` and `dependencies.c` to suit your environment (they start by \_\_fuse\_)
 3. Start implementing your fs by including `primitives.h`
 4. In the code used to test your fs implementation include `bfuse.h` and register the device to the driver by running:
 
