@@ -1,6 +1,19 @@
+![Logo](https://github.com/TretornESP/fused/raw/main/logo.png)
+
 # FUSED 
 
 Userspace driver for developing filesystems
+
+## Roadmap
+- [x] Basic FUSE driver
+- [x] Read functions
+- [ ] Write functions
+- [ ] IOCTL functions
+- [ ] Startup functions
+- [ ] Status functions
+- [ ] Lazy loading
+- [ ] Buffer cache emulation
+- [ ] SSD Wear emulation
 
 ## What is FUSED?
 
@@ -32,4 +45,3 @@ For this you will have to:
     ```register_drive("./path/to/image.img", "mount point string", 512); // 512 is the sector size``` 
 
 5. After that, you are golden, now you can run call the driver in your fs, remember to identify the device throgh the mount string
-
