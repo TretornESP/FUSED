@@ -8,9 +8,9 @@ struct mount * mount_header = 0x0;
 void debug() {
     struct mount * current = mount_header;
     if (current == 0)
-        printf("Empty list\n");
+        __fuse_printf("Empty list\n");
     while (current != 0x0) {
-        printf("Mount: %s\n", current->mount_point);
+        __fuse_printf("Mount: %s\n", current->mount_point);
         current = current->next;
     }
 }
@@ -81,7 +81,7 @@ int load_file(const char* filename, u64 sector_size, u64 * sectors) {
 #endif
     int file = __fuse_open(filename, __fuse_O_RDWR);
     if (file == -1) {
-        printf("Error opening file %s\n", filename);
+        __fuse_printf("Error opening file %s\n", filename);
         return (void*)0x0;
     }
 
