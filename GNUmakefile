@@ -60,6 +60,10 @@ all:
 	@echo "Running..."
 	@make run
 
+pull:
+	@echo "Updating..."
+	@git pull
+
 upload:
 	@echo "Cleaning"
 	@make cleansetup
