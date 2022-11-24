@@ -4,8 +4,13 @@
 #include <stdint.h>
 
 
+#define SB_OFFSET_LBA 2
+#define BGDT_BLOCK 1
+
 #define EXT2_SUPER_MAGIC    0xEF53
 #define EXT2_NAME_LEN       255
+
+#define EXT2_ROOT_INO_INDEX 2
 
 //FS State
 #define EXT2_FS_CLEAN       1
@@ -199,9 +204,10 @@ struct ext2_directory_entry {
 
 struct ext2_partition {
     char name[32];
+    uint32_t lba;
+    uint32_t group_number;
     struct ext2_superblock_extended *sb;
     struct ext2_group_descriptor *gd;
-    uint32_t group_number;
     struct ext2_partition *next;
 };
 
@@ -218,5 +224,7 @@ struct ext2_partition {
 uint8_t ext2_search(const char*, uint32_t);
 char register_ext2_partition(const char* disk, uint32_t lba);
 uint8_t unregister_ext2_partition(char letter);
-
+uint32_t ext2_count_partitions();
+int ext2_get_partition_name_by_index(char * partno, uint32_t index);
+uint8_t ext2_read_root_inode(const char* partno);
 #endif

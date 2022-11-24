@@ -76,7 +76,7 @@ int ioctl_disk(const char * drive, int request, void *buffer) {
         }
         default:                        {return OP_FAILURE;}
     }
-    memcpy(buffer, &result, sizeof(u32));
+    __fuse_memcpy(buffer, &result, sizeof(u32));
     return OP_SUCCESS;
 }
 
@@ -89,7 +89,6 @@ int get_disk_status(const char * drive) {
     if (mount->configured == 0) {
         return STATUS_NOT_READY;
     }
-
     //TODO: Add busy option after delay emulation is implemented
     return STATUS_READY;
 }
@@ -102,7 +101,6 @@ int init_disk(const char * drive) {
 
     //Drive startup code goes here
     //--------------------------------
-
     //--------------------------------
 
     mount->configured = 1;

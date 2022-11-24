@@ -53,6 +53,8 @@ override CFILES :=$(call rwildcard,$(SRCDIR),*.c)
 override OBJS := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(CFILES))
 
 all:
+	@echo "Cleaning..."
+	@make clean
 	@echo "Building fuse..."
 	@make fuse
 	@echo "Running..."

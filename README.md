@@ -7,10 +7,11 @@ Userspace driver for developing filesystems
 ## Roadmap
 - [x] Basic FUSE driver
 - [x] Read functions
-- [ ] Write functions
-- [ ] IOCTL functions
-- [ ] Startup functions
-- [ ] Status functions
+- [x] Write functions
+- [x] IOCTL functions
+- [x] Startup functions
+- [x] Status functions
+- [x] ext2 demo
 - [ ] Lazy loading
 - [ ] Buffer cache emulation
 - [ ] SSD Wear emulation
