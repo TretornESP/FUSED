@@ -4,7 +4,6 @@
 //Configuration starts here
 //----------------------------------------------
 #define __USE_STDINT
-#define __DEBUG_ENABLED
 #define __EAGER
 //----------------------------------------------
 //Configuration ends here

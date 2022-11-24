@@ -60,6 +60,15 @@ all:
 	@echo "Running..."
 	@make run
 
+upload:
+	@echo "Cleaning"
+	@make cleansetup
+	@make clean
+	@echo "Adding files to git"
+	@git add .
+	@git commit
+	@git push origin main
+
 reset:
 	@rm -f $(IMGDIR)/$(DUMMY)
 	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
