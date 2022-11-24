@@ -197,6 +197,14 @@ struct ext2_directory_entry {
     char     name[EXT2_NAME_LEN];   /* File name */
 } __attribute__((packed));
 
+struct ext2_partition {
+    char name[32];
+    struct ext2_superblock_extended *sb;
+    struct ext2_group_descriptor *gd;
+    uint32_t group_number;
+    struct ext2_partition *next;
+};
+
 //Directory entry types
 #define EXT2_DIR_TYPE_UNKNOWN   0
 #define EXT2_DIR_TYPE_REGULAR   1
@@ -208,5 +216,7 @@ struct ext2_directory_entry {
 #define EXT2_DIR_TYPE_SYMLINK   7
 
 uint8_t ext2_search(const char*, uint32_t);
+char register_ext2_partition(const char* disk, uint32_t lba);
+uint8_t unregister_ext2_partition(char letter);
 
 #endif

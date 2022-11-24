@@ -27,10 +27,10 @@ FUSED enables you to map any raw image and expose a device driver interface thro
 
 ## How to test FUSED?
 
-You can start by creating a test scenario by simply running `.\maketest.sh`
-
-It requires `mkfs.ext2` and `dd` to be installed.
-Then just run `./go.sh` to run the test scenario.
+First create the build directory structure with `make setup`
+You can start by creating a test scenario by simply running `make testsetup`
+Then you may build the test program by runnin `make fuse` and running it by `make run`
+Or simply do the last two steps with `make`
 
 ## How to use FUSED in your own project?
 

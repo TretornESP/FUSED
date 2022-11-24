@@ -1,10 +1,15 @@
 override FUSE := fuse
+override GDBCFG := debug.gdb
 
 CC := /usr/bin/cc
 LD := /usr/bin/ld
 GDB := gdb
 
 CFLAGS ?= -O2 -g -Wall -Wextra -Wpedantic -pipe -std=c11
+GDBFLAGS ?= --nx --command=$(GDBCFG)
+
+DISAS := intel
+ENTRY := main
 
 ABSDIR := $(shell pwd)
 SRCDIR := $(ABSDIR)/src
@@ -53,18 +58,30 @@ all:
 	@echo "Running..."
 	@make run
 
+reset:
+	@rm -f $(IMGDIR)/$(DUMMY)
+	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
+	@mkfs.$(FS) $(IMGDIR)/$(DUMMY)
+
 setup:
-	@make cleansetup
 	@mkdir -p $(BUILDDIR)
 	@mkdir -p $(OBJDIR)
 	@mkdir -p $(IMGDIR)
-
+	@echo file $(BUILDDIR)/$(FUSE) > debug.gdb
+	@echo set disassembly-flavor $(DISAS) >> debug.gdb
+	@echo b $(ENTRY) >> debug.gdb
+	@echo run >> debug.gdb
+	
+testsetup:
 	@dd if=/dev/zero of=$(IMGDIR)/$(RAW) bs=$(SECTSIZE) count=$(SECTCOUNT)
 	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
 	@mkfs.$(FS) $(IMGDIR)/$(DUMMY)
-	@make autogen
 
-autogen:
+.PHONY: debug
+debug:
+	@$(GDB) $(GDBFLAGS)
+
+demo:
 	@echo "Building demo file..."
 	@echo "#include \"fused/bfuse.h\"" > $(SRCDIR)/AUTOGEN_test.c
 	@echo "#include \"demofs/ext2.h\"" >> $(SRCDIR)/AUTOGEN_test.c
@@ -80,11 +97,14 @@ autogen:
 	@echo "    }" >> $(SRCDIR)/AUTOGEN_test.c
 	@echo "}" >> $(SRCDIR)/AUTOGEN_test.c
 
-cleanautogen:
+cleantest:
 	@rm -f $(SRCDIR)/AUTOGEN_*.c
+	@rm -f $(IMGDIR)/$(RAW)
+	@rm -f $(IMGDIR)/$(DUMMY)
 
 cleansetup:
 	@rm -rf $(BUILDHOME)
+	@rm -f $(GDBCFG)
 
 fuse: $(OBJS) link
 
@@ -101,7 +121,8 @@ link:
 .PHONY: clean
 clean:
 	@echo "Cleaning..."
-	@rm -rf $(BUILDHOME)
+	@rm -rf $(BUILDDIR)/*
+	@rm -rf $(OBJDIR)/*
 	@rm -f $(SRCDIR)/AUTOGEN_*
 
 .PHONY: run
