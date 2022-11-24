@@ -8,7 +8,7 @@
 
 #define STATUS_NOT_READY            0
 #define STATUS_READY                1
-#define STATUS_BUSSY                2
+#define STATUS_BUSY                 2
 #define STATUS_NON_PRESENT          3
 #define STATUS_UNCONTROLLED_ERROR   4
 

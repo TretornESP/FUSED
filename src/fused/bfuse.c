@@ -21,6 +21,9 @@ void debug() {
 void add_mount(const char * mount_point, const char * file_name, u8 * buffer, u64 sector_size, u64 start_sector, u64 sector_count) {
 #else
 void add_mount(const char * mount_point, const char * file_name, int handle, u64 sector_size, u64 start_sector, u64 sector_count) {
+__fuse_strncpy(mount->ATA_REVISION, ATA_REV_STRING, 16);
+__fuse_strncpy(mount->ATA_MODEL, ATA_MODEL_STRING, 40);
+__fuse_strncpy(mount->ATA_SERIAL, ATA_SERIAL_STRING, 20);
 #endif
     struct mount * new_mount = __fuse_malloc(sizeof(struct mount));
     __fuse_strncpy(new_mount->mount_point, mount_point, __fuse_strlen(mount_point));
@@ -34,6 +37,7 @@ void add_mount(const char * mount_point, const char * file_name, int handle, u64
     new_mount->starting_sector = start_sector;
     new_mount->sector_count = sector_count;
     new_mount->next = mount_header;
+    new_mount->configured = 0;
     mount_header = new_mount;
 }
 

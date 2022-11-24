@@ -1,5 +1,5 @@
 #include "ext2.h"
-#include "primitives.h"
+#include "../fused/primitives.h"
 
 uint8_t ext2_search(const char* name, uint32_t lba) {
     uint8_t bpb[1024];
