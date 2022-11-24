@@ -138,7 +138,6 @@ clean:
 	@echo "Cleaning..."
 	@rm -rf $(BUILDDIR)/*
 	@rm -rf $(OBJDIR)/*
-	@rm -f $(SRCDIR)/AUTOGEN_*
 
 .PHONY: run
 run:

@@ -46,3 +46,28 @@ For this you will have to:
     ```register_drive("./path/to/image.img", "mount point string", 512); // 512 is the sector size``` 
 
 5. After that, you are golden, now you can run call the driver in your fs, remember to identify the device throgh the mount string
+
+
+## Make targets
+### Setup and testing targets
+* `make setup` - Creates the build directory structure
+* `make testsetup` - Creates a test scenario with two files (empty and ext2 formatted)
+* `make demo` - Creates a demo file that can be used to test the driver
+* `make reset` - Resets the test scenario images
+* `make cleantest` - Undo testsetup
+* `make cleansetup` - Undo setup
+
+### Dev targets
+* `make pull` - Refreshes the repository
+* `make upload` - Uploads the repository to the remote
+
+
+### Build targets
+* `make` - Cleans, builds and runs the test program
+* `make all` - Same as above
+* `make fuse` - Builds the program
+* `make clean` - Deletes all compiled files
+
+### Run targets
+* `make run` - Runs the program
+* `make debug` - Launches GDB
