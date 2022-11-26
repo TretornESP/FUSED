@@ -1,6 +1,8 @@
 #include "fused/bfuse.h"
 #include "demofs/ext2.h"
 #include <stdio.h>
+#include <stdlib.h>
+
 int main(int argc, char *argv[]) {
 
     (void)argc;
@@ -25,6 +27,14 @@ int main(int argc, char *argv[]) {
     for (uint32_t i = 0; i < partitions; i++) {
         ext2_get_partition_name_by_index(name, i);
         printf("Searching root ino for partition: %s\n", name);
-        ext2_read_root_inode(name);
+        struct ext2_inode_descriptor root_inode;
+        ext2_read_root_inode(name, &root_inode);
+        uint64_t file_size = ((struct ext2_inode_descriptor_generic*)&root_inode)->i_size;
+        printf("File size: %ld\n", file_size);
+        uint8_t *buffer = malloc(file_size);
+        ext2_read_inode(name, EXT2_ROOT_INO_INDEX, buffer, file_size, 0);
+        struct ext2_directory_entry * dir = (struct ext2_directory_entry *)buffer;
+        printf("Root directory entries:\n");
+        printf("[Directory %s] Inode: %d, Len: %d, Name len: %d, File type: %d\n", dir->name, dir->inode, dir->rec_len, dir->name_len, dir->file_type);
     }
 }

@@ -3,12 +3,12 @@
 #define _EXT2_H
 #include <stdint.h>
 
-
-#define SB_OFFSET_LBA 2
-#define BGDT_BLOCK 1
-
-#define EXT2_SUPER_MAGIC    0xEF53
-#define EXT2_NAME_LEN       255
+#define SB_OFFSET_LBA           2
+#define BGDT_BLOCK              1
+#define BLOCK_NUMBER            4
+#define MAX_DISK_NAME_LENGTH    32
+#define EXT2_SUPER_MAGIC        0xEF53
+#define EXT2_NAME_LEN           255
 
 #define EXT2_ROOT_INO_INDEX 2
 
@@ -152,7 +152,7 @@ struct ext2_inode_descriptor_generic {
     uint32_t i_dtime;               /* Deletion Time */
     uint16_t i_gid;                 /* Low 16 bits of Group Id */
     uint16_t i_links_count;         /* Links count */
-    uint32_t i_blocks;              /* Blocks count */
+    uint32_t i_sectors;             /* sector count */
     uint32_t i_flags;               /* File flags */
     uint32_t i_osd1;                /* OS dependent 1 */
     uint32_t i_block[15];           /* Pointers to blocks */
@@ -221,10 +221,12 @@ struct ext2_partition {
 #define EXT2_DIR_TYPE_SOCKET    6
 #define EXT2_DIR_TYPE_SYMLINK   7
 
+uint64_t ext2_read_inode(const char * partno, uint32_t inode_index, uint8_t * destination_buffer, uint64_t size, uint64_t offset);
+void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
 uint8_t ext2_search(const char*, uint32_t);
 char register_ext2_partition(const char* disk, uint32_t lba);
 uint8_t unregister_ext2_partition(char letter);
 uint32_t ext2_count_partitions();
 int ext2_get_partition_name_by_index(char * partno, uint32_t index);
-uint8_t ext2_read_root_inode(const char* partno);
+uint8_t ext2_read_root_inode(const char* partno, struct ext2_inode_descriptor * target_inode);
 #endif
