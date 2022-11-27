@@ -18,6 +18,11 @@ BUILDDIR := $(BUILDHOME)/bin
 OBJDIR := $(BUILDHOME)/lib
 IMGDIR := $(BUILDHOME)/img
 
+MOUNTPOINT := /mnt/$(FUSE)
+TESTDIR := ./test
+INFILE := test.input
+OUTFILE := test.output
+
 RAW := raw.img
 DUMMY := dummy.img
 
@@ -73,10 +78,34 @@ upload:
 	@git commit
 	@git push origin main
 
+.PHONY: test
+test:
+	@make reset
+	@make
+	$(eval TE := $(shell diff $(TESTDIR)/$(INFILE) $(TESTDIR)/$(OUTFILE)))
+	@make test2
+test2:
+    ifeq ($(TE),)
+		@echo "TEST PASSED"
+    else
+		@echo "TEST FAILED"
+    endif
+	
+
 reset:
 	@rm -f $(IMGDIR)/$(DUMMY)
 	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
 	@mkfs.$(FS) $(IMGDIR)/$(DUMMY)
+	@sudo losetup -f $(IMGDIR)/$(DUMMY)
+	@make reset2
+
+reset2:
+	$(eval LOOP_DEV_PATH := $(shell losetup -a | grep $(DUMMY) | cut -d: -f1))
+	@echo Loop device path: $(LOOP_DEV_PATH)
+	@sudo mount $(LOOP_DEV_PATH) $(MOUNTPOINT)
+	@sudo cp $(TESTDIR)/$(INFILE) $(MOUNTPOINT)/$(INFILE)
+	@sudo umount $(MOUNTPOINT)
+	@sudo losetup -d $(LOOP_DEV_PATH)
 
 setup:
 	@mkdir -p $(BUILDDIR)
@@ -89,8 +118,8 @@ setup:
 	
 testsetup:
 	@dd if=/dev/zero of=$(IMGDIR)/$(RAW) bs=$(SECTSIZE) count=$(SECTCOUNT)
-	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
-	@mkfs.$(FS) $(IMGDIR)/$(DUMMY)
+	@sudo mkdir -p $(MOUNTPOINT)
+	@make reset
 
 .PHONY: debug
 debug:
@@ -116,6 +145,7 @@ cleantest:
 	@rm -f $(SRCDIR)/AUTOGEN_*.c
 	@rm -f $(IMGDIR)/$(RAW)
 	@rm -f $(IMGDIR)/$(DUMMY)
+	@sudo rm -rf $(MOUNTPOINT)
 
 cleansetup:
 	@rm -rf $(BUILDHOME)

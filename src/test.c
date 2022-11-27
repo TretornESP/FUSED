@@ -22,19 +22,22 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    char name[32];
     uint32_t partitions = ext2_count_partitions();
     for (uint32_t i = 0; i < partitions; i++) {
-        ext2_get_partition_name_by_index(name, i);
-        printf("Searching root ino for partition: %s\n", name);
-        struct ext2_inode_descriptor root_inode;
-        ext2_read_root_inode(name, &root_inode);
-        uint64_t file_size = ((struct ext2_inode_descriptor_generic*)&root_inode)->i_size;
-        printf("File size: %ld\n", file_size);
-        uint8_t *buffer = malloc(file_size);
-        ext2_read_inode(name, EXT2_ROOT_INO_INDEX, buffer, file_size, 0);
-        struct ext2_directory_entry * dir = (struct ext2_directory_entry *)buffer;
-        printf("Root directory entries:\n");
-        printf("[Directory %s] Inode: %d, Len: %d, Name len: %d, File type: %d\n", dir->name, dir->inode, dir->rec_len, dir->name_len, dir->file_type);
+        struct ext2_partition * partition = ext2_get_partition_by_index(i);
+        uint64_t file_size = ext2_get_file_size(partition, "/test.input");
+        uint8_t * buffer = ext2_buffer_for_size(partition, file_size);
+
+        if (partition) {
+            if (ext2_read_file(partition, "/test.input", buffer, file_size)) {
+                FILE * file = fopen("./test/test.output", "wb");
+                fwrite(buffer, 1, file_size, file);
+                fclose(file);
+            } else {
+                printf("Failed to read file\n");
+            }
+        }
+
+        free(buffer);
     }
 }

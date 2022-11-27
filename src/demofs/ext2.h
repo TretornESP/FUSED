@@ -204,10 +204,12 @@ struct ext2_directory_entry {
 
 struct ext2_partition {
     char name[32];
+    char disk[32];
     uint32_t lba;
     uint32_t group_number;
+    uint32_t sector_size;
     struct ext2_superblock_extended *sb;
-    struct ext2_group_descriptor *gd;
+    struct ext2_block_group_descriptor *gd;
     struct ext2_partition *next;
 };
 
@@ -221,12 +223,23 @@ struct ext2_partition {
 #define EXT2_DIR_TYPE_SOCKET    6
 #define EXT2_DIR_TYPE_SYMLINK   7
 
-uint64_t ext2_read_inode(const char * partno, uint32_t inode_index, uint8_t * destination_buffer, uint64_t size, uint64_t offset);
-void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
 uint8_t ext2_search(const char*, uint32_t);
-char register_ext2_partition(const char* disk, uint32_t lba);
-uint8_t unregister_ext2_partition(char letter);
 uint32_t ext2_count_partitions();
-int ext2_get_partition_name_by_index(char * partno, uint32_t index);
-uint8_t ext2_read_root_inode(const char* partno, struct ext2_inode_descriptor * target_inode);
+struct ext2_partition * ext2_get_partition_by_index(uint32_t index);
+
+uint8_t * ext2_buffer_for_size(struct ext2_partition * partition, uint64_t size);
+
+uint64_t ext2_get_file_size(struct ext2_partition* partition, const char * path);
+void ext2_list_directory(struct ext2_partition* partition, const char * path);
+uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size);
+
+struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition, uint32_t inode_index);
+uint32_t ext2_index_from_inode(struct ext2_partition* partition, struct ext2_inode_descriptor * inode);
+uint64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
+uint64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
+void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
+uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path);
+
+struct ext2_partition * register_ext2_partition(const char* disk, uint32_t lba);
+uint8_t unregister_ext2_partition(char letter);
 #endif
