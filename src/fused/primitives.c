@@ -14,7 +14,6 @@ int read_disk(const char* drive, void *buffer, int sector, int count) {
     }
     u64 offset = sector * mount->sector_size;
     u64 size = count * mount->sector_size;
-
 #ifdef __EAGER
     __fuse_memcpy(buffer, mount->file_ptr + offset, size);
 #else

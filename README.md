@@ -54,6 +54,7 @@ For this you will have to:
 * `make testsetup` - Creates a test scenario with two files (empty and ext2 formatted)
 * `make demo` - Creates a demo file that can be used to test the driver
 * `make reset` - Resets the test scenario images
+* `make test` - Runs the full test scenario
 * `make cleantest` - Undo testsetup
 * `make cleansetup` - Undo setup
 

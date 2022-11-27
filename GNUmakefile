@@ -22,7 +22,8 @@ MOUNTPOINT := /mnt/$(FUSE)
 TESTDIR := ./test
 INFILE := test.input
 OUTFILE := test.output
-
+TESTBLK := 512
+TESTCNT :=  6291456
 RAW := raw.img
 DUMMY := dummy.img
 
@@ -82,17 +83,20 @@ upload:
 test:
 	@make reset
 	@make
-	$(eval TE := $(shell diff $(TESTDIR)/$(INFILE) $(TESTDIR)/$(OUTFILE)))
 	@make test2
 test2:
-    ifeq ($(TE),)
-		@echo "TEST PASSED"
-    else
-		@echo "TEST FAILED"
-    endif
+	$(eval TE := $(shell diff $(TESTDIR)/$(INFILE) $(TESTDIR)/$(OUTFILE)))
+	@if [ -z "$(TE)" ]; then \
+		echo "Test passed"; \
+	else \
+		echo "Test failed"; \
+	fi
 	
 
 reset:
+	@rm -rf $(TESTDIR)
+	@mkdir -p $(TESTDIR)
+	@dd if=/dev/random of=$(TESTDIR)/$(INFILE) bs=$(TESTBLK) count=$(TESTCNT)
 	@rm -f $(IMGDIR)/$(DUMMY)
 	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
 	@mkfs.$(FS) $(IMGDIR)/$(DUMMY)

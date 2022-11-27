@@ -129,29 +129,105 @@ uint8_t * ext2_buffer_for_size(struct ext2_partition * partition, uint64_t size)
     return malloc(buffer_size);
 }
 
-uint64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count) {
-    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+int64_t ext2_read_block(struct ext2_partition* partition, uint32_t block, uint8_t * destination_buffer) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    uint32_t block_sectors = DIVIDE_ROUNDED_UP(block_size, partition->sector_size);
+    uint32_t block_lba = (block * block_size) / partition->sector_size;
+
+    if (block) {
+        if (read_disk(partition->disk, destination_buffer, partition->lba + block_lba, block_sectors)) {
+            printf("[EXT2] Failed to read block %d\n", block);
+            return EXT2_READ_FAILED;
+        }
+    } else {
+        return 0;
+    }
+
+    return block_size;
+}
+
+int64_t ext2_read_blocks(struct ext2_partition* partition, struct ext2_inode_descriptor_generic * inode, uint32_t max, uint8_t * destination_buffer, uint64_t count) {
+    uint64_t blocks_read = 0;
+
+    for (uint32_t i = 0; i < max; i++) {
+        int64_t read_result = ext2_read_block(partition, inode->i_block[i], destination_buffer);
+
+        if (read_result == EXT2_READ_FAILED) {
+            return EXT2_READ_FAILED;
+        } else if (read_result == 0) {
+            return blocks_read;
+        }
+
+        destination_buffer += read_result;
+        if (blocks_read++ == count) {
+            break;
+        }
+    }
+
+    return blocks_read;
+}
+
+int64_t ext2_read_indirect_block(struct ext2_partition* partition, struct ext2_inode_descriptor_generic* inode, uint8_t *destination_buffer, uint64_t count) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    uint32_t blocks_per_block = block_size / 4;
+
+    uint32_t * indirect_block = (uint32_t*)ext2_buffer_for_size(partition, block_size);
+
+    if (ext2_read_block(partition, inode->i_block[12], (uint8_t*)indirect_block) <= 0) {
+        printf("[EXT2] Failed to read indirect block\n");
+        free(indirect_block);
+        return EXT2_READ_FAILED;
+    }
+
+    uint32_t blocks_read = 0;
+    for (uint32_t i = 0; i < blocks_per_block; i++) {
+        int64_t read_result = ext2_read_block(partition, indirect_block[i], destination_buffer);
+
+        if (read_result == EXT2_READ_FAILED) {
+            free(indirect_block);
+            return EXT2_READ_FAILED;
+        } else if (read_result == 0) {
+            free(indirect_block);
+            return blocks_read;
+        }
+
+        destination_buffer += read_result;
+        if (blocks_read++ == count) {
+            break;
+        }
+    }
+
+    free(indirect_block);
+    return blocks_read;
+}
+
+uint64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+    int64_t read_result = ext2_read_blocks(partition, inode, 12, destination_buffer, count);
 
     uint64_t blocks_read = 0;
 
-    for (uint32_t i = 0; i < 12; i++) {
-        if (inode->i_block[i] == 0) {
-            break;
+    if (read_result < 0) {
+        printf("[EXT2] File read failed\n");
+        return 0;
+    }
+    blocks_read += read_result;
+    destination_buffer += read_result * block_size;
+
+    printf("[EXT2] Read %ld blocks, max: %ld\n", blocks_read, count);
+    if (blocks_read < count) {
+        read_result = ext2_read_indirect_block(partition, inode, destination_buffer, count - blocks_read);
+        if (read_result < 0) {
+            printf("[EXT2] File read failed\n");
+            return 0;
         }
 
-        uint32_t block_lba = (inode->i_block[i] * block_size) / partition->sector_size;
-        uint32_t block_sectors = DIVIDE_ROUNDED_UP(block_size, partition->sector_size);
-
-        if (read_disk(partition->disk, destination_buffer, partition->lba + block_lba, block_sectors)) {
-            printf("[EXT2] Failed to read %d sectors from: %d\n", block_sectors, partition->lba + block_lba);
-            return blocks_read;
-        }
-
-        destination_buffer += block_size;
-        blocks_read++;
-        if (blocks_read == count) {
-            return blocks_read;
+        blocks_read += read_result;
+        destination_buffer += read_result * block_size;
+        printf("[EXT2] Indirect read %ld blocks, max: %ld\n", blocks_read, count);
+        if (blocks_read < count) {
+            printf("More to come...\n");
         }
     }
 
@@ -267,11 +343,12 @@ uint32_t ext2_inode_from_path_and_parent(struct ext2_partition* partition, uint3
 uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path) {
     char * path_copy = malloc(strlen(path) + 1);
     strcpy(path_copy, path);
-    
     char * token = strtok(path_copy, "/");
     uint32_t inode_index = EXT2_ROOT_INO_INDEX;
+
     while (token != 0) {
         inode_index = ext2_inode_from_path_and_parent(partition, inode_index, token);
+
         if (inode_index == 0) {
             return 0;
         }

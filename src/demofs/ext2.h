@@ -11,7 +11,8 @@
 #define EXT2_NAME_LEN           255
 
 #define EXT2_ROOT_INO_INDEX 2
-
+#define EXT2_EOF 0xFFFFFFFF
+#define EXT2_READ_FAILED 0xFFFFFFFE
 //FS State
 #define EXT2_FS_CLEAN       1
 #define EXT2_FS_ERRORS      2
