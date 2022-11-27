@@ -2,3 +2,5 @@ test/*
 build/*
 *AUTOGEN_*
 *.img
+*.input
+*.output
