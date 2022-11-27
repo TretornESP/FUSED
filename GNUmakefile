@@ -23,12 +23,12 @@ TESTDIR := ./test
 INFILE := test.input
 OUTFILE := test.output
 TESTBLK := 512
-TESTCNT :=  6291456
+TESTCNT := 150000
 RAW := raw.img
 DUMMY := dummy.img
 
 FS := ext2#Warning, this must be mkfs compatible
-
+BLKSIZE := 1024
 SECTSIZE = 512
 SECTCOUNT = 204800
 
@@ -99,7 +99,7 @@ reset:
 	@dd if=/dev/random of=$(TESTDIR)/$(INFILE) bs=$(TESTBLK) count=$(TESTCNT)
 	@rm -f $(IMGDIR)/$(DUMMY)
 	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
-	@mkfs.$(FS) $(IMGDIR)/$(DUMMY)
+	@mkfs.$(FS) $(IMGDIR)/$(DUMMY) -b $(BLKSIZE)
 	@sudo losetup -f $(IMGDIR)/$(DUMMY)
 	@make reset2
 

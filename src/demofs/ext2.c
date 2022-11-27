@@ -217,6 +217,7 @@ uint64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode
 
     printf("[EXT2] Read %ld blocks, max: %ld\n", blocks_read, count);
     if (blocks_read < count) {
+        printf("[EXT2] Reading indirect block\n");
         read_result = ext2_read_indirect_block(partition, inode, destination_buffer, count - blocks_read);
         if (read_result < 0) {
             printf("[EXT2] File read failed\n");
@@ -227,7 +228,7 @@ uint64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode
         destination_buffer += read_result * block_size;
         printf("[EXT2] Indirect read %ld blocks, max: %ld\n", blocks_read, count);
         if (blocks_read < count) {
-            printf("More to come...\n");
+            printf("Double indirect not implemented yet!\n");
         }
     }
 
@@ -368,12 +369,12 @@ uint64_t ext2_get_file_size(struct ext2_partition* partition, const char* path) 
 //Hey this may corrupt memory
 uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size) {
     uint32_t inode_index = ext2_path_to_inode(partition, path);
-    if (!inode_index) return 0;
+    if (!inode_index) {printf("err ino index\n");return 0;}
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
-    if (inode->i_mode & INODE_TYPE_DIR) return 0;
+    if (inode->i_mode & INODE_TYPE_DIR) {printf("err ino type\n");return 0;}
     if (inode->i_size < size) size = inode->i_size;
     uint64_t read_bytes = ext2_read_inode_bytes(partition, inode_index, destination_buffer, size);
-    if (read_bytes <= 0) return 0;
+    if (read_bytes <= 0) {printf("err read bytes\n");return 0;}
     return 1;
 }
 
@@ -409,6 +410,8 @@ struct ext2_partition * register_ext2_partition(const char* disk, uint32_t lba) 
     printf("[EXT2] Blocks per group: %d\n", superblock->s_blocks_per_group);
     printf("[EXT2] Inodes per group: %d\n", superblock->s_inodes_per_group);
 
+    uint8_t bgdt_block = (block_size == 1024) ? 2 : 1;
+
     uint32_t block_groups_first  = DIVIDE_ROUNDED_UP(superblock->s_blocks_count, superblock->s_blocks_per_group);
     uint32_t block_groups_second = DIVIDE_ROUNDED_UP(superblock->s_inodes_count, superblock->s_inodes_per_group);
 
@@ -426,14 +429,8 @@ struct ext2_partition * register_ext2_partition(const char* disk, uint32_t lba) 
 
     void * block_group_descriptor_buffer = malloc(block_group_descriptors_size * sector_size);
     
-    if (read_disk(disk, (uint8_t*)block_group_descriptor_buffer, lba+(sectors_per_block*BGDT_BLOCK), block_group_descriptors_size)) return 0;
+    if (read_disk(disk, (uint8_t*)block_group_descriptor_buffer, lba+(sectors_per_block*bgdt_block), block_group_descriptors_size)) return 0;
     struct ext2_block_group_descriptor * block_group_descriptor = (struct ext2_block_group_descriptor*)block_group_descriptor_buffer;
-
-    printf("[EXT2] Groups %d loaded\n", block_groups_first);
-    for (uint32_t i = 0; i < block_groups_first; i++) {
-        printf("[EXT2] Group %d: block bitmap at %d, inode bitmap at %d, inode table at %d\n", i, block_group_descriptor[i].bg_block_bitmap, block_group_descriptor[i].bg_inode_bitmap, block_group_descriptor[i].bg_inode_table);
-        printf("[EXT2] Group %d: free blocks count: %d, free inodes count: %d, used dirs count: %d\n", i, block_group_descriptor[i].bg_free_blocks_count, block_group_descriptor[i].bg_free_inodes_count, block_group_descriptor[i].bg_used_dirs_count); 
-    }
 
     printf("[EXT2] Registering partition %s:%d\n", disk, lba);
 
@@ -523,16 +520,15 @@ struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition,
 
     uint32_t inode_table_block = partition->gd[inode_group].bg_inode_table;
     uint32_t inode_table_lba = (inode_table_block * block_size) / partition->sector_size;
-
     uint8_t * root_inode_buffer = malloc(block_size);
-    if (read_disk(partition->disk, root_inode_buffer, partition->lba + inode_table_lba + inode_block, sectors_per_block)) {
+    if (read_disk(partition->disk, root_inode_buffer, partition->lba + inode_table_lba + inode_block*sectors_per_block, sectors_per_block)) {
         printf("[EXT2] Root inode read failed\n");
         free(root_inode_buffer);
         return 0;
     }
 
     struct ext2_inode_descriptor * inode = malloc(sizeof(struct ext2_inode_descriptor));
-    memcpy(inode, root_inode_buffer + ((inode_index * inode_size) % block_size), inode_size);
+    memcpy(inode, root_inode_buffer + (((inode_index * inode_size) % block_size)), inode_size);
     free(root_inode_buffer);
 
     return inode;
