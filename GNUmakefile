@@ -22,16 +22,15 @@ MOUNTPOINT := /mnt/$(FUSE)
 TESTDIR := ./test
 INFILE := test.input
 OUTFILE := test.output
-TESTBLK := 512
-TESTCNT := 150000
+TESTBLK := 1024
+TESTCNT := 700000
 RAW := raw.img
 DUMMY := dummy.img
 
 FS := ext2#Warning, this must be mkfs compatible
 BLKSIZE := 1024
-SECTSIZE = 512
-SECTCOUNT = 204800
-
+SECTSIZE = 4096
+SECTCOUNT = 512000
 DIRS := $(wildcard $(SRCDIR)/*)
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
 
@@ -81,17 +80,18 @@ upload:
 
 .PHONY: test
 test:
-	@make reset
 	@make
 	@make test2
 test2:
-	$(eval TE := $(shell diff $(TESTDIR)/$(INFILE) $(TESTDIR)/$(OUTFILE)))
-	@if [ -z "$(TE)" ]; then \
-		echo "Test passed"; \
+	$(eval m1 := $(shell md5sum $(TESTDIR)/$(INFILE) | cut -d' ' -f1))
+	$(eval m2 := $(shell md5sum $(TESTDIR)/$(OUTFILE) | cut -d' ' -f1))
+	@echo "md5sum of $(TESTDIR)/$(INFILE) is $(m1)"
+	@echo "md5sum of $(TESTDIR)/$(OUTFILE) is $(m2)"
+	@if [ "$(m1)" = "$(m2)" ]; then \
+		echo "Test passed!"; \
 	else \
-		echo "Test failed"; \
+		echo "Test failed!"; \
 	fi
-	
 
 reset:
 	@rm -rf $(TESTDIR)

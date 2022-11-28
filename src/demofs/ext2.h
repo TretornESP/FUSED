@@ -236,8 +236,8 @@ uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uin
 
 struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition, uint32_t inode_index);
 uint32_t ext2_index_from_inode(struct ext2_partition* partition, struct ext2_inode_descriptor * inode);
-uint64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
-uint64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
+int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
+int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
 void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
 uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path);
 
