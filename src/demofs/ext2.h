@@ -17,6 +17,11 @@
 #define EXT2_FS_CLEAN       1
 #define EXT2_FS_ERRORS      2
 
+#define EXT2_DIRECT_BLOCKS 12
+#define EXT2_INDIRECT_BLOCKS(blocksize, sizeo_of_entry) ((blocksize / sizeo_of_entry))
+#define EXT2_DOUBLE_INDIRECT_BLOCKS(blocksize, sizeo_of_entry) ((blocksize / sizeo_of_entry) * (blocksize / sizeo_of_entry))
+#define EXT2_TRIPLE_INDIRECT_BLOCKS(blocksize, sizeo_of_entry) ((blocksize / sizeo_of_entry) * (blocksize / sizeo_of_entry) * (blocksize / sizeo_of_entry))
+
 //Error handling methods
 #define EXT2_IGNORE_ERRORS  1
 #define EXT2_REMOUNT_RO     2
@@ -232,12 +237,12 @@ uint8_t * ext2_buffer_for_size(struct ext2_partition * partition, uint64_t size)
 
 uint64_t ext2_get_file_size(struct ext2_partition* partition, const char * path);
 void ext2_list_directory(struct ext2_partition* partition, const char * path);
-uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size);
+uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size, uint64_t offset);
 
 struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition, uint32_t inode_index);
 uint32_t ext2_index_from_inode(struct ext2_partition* partition, struct ext2_inode_descriptor * inode);
-int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
-int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
+int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count, uint64_t offset);
+int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count, uint64_t offset);
 void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
 uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path);
 

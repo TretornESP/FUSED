@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (partition) {
-            if (ext2_read_file(partition, "/test.input", buffer, file_size)) {
+            if (ext2_read_file(partition, "/test.input", buffer, file_size, 0)) {
                 FILE * file = fopen("./test/test.output", "wb");
                 fwrite(buffer, 1, file_size, file);
                 fclose(file);

@@ -213,12 +213,16 @@ int64_t ext2_read_triple_indirect_blocks(struct ext2_partition* partition, uint3
     return blocks_read;
 }
 
-int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count) {
+int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count, uint64_t blocks_to_skip) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
-    uint32_t blocks_read = 0;
+    if (inode == 0)
+        return EXT2_READ_FAILED;
 
-    int64_t read_result = ext2_read_direct_blocks(partition, inode->i_block, 12, destination_buffer, count);
+    uint32_t blocks_read = 0;
+    int64_t read_result = 0;
+
+    read_result = ext2_read_direct_blocks(partition, inode->i_block, 12, destination_buffer, count);
     if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
     blocks_read += read_result;
     destination_buffer += read_result * block_size;
@@ -253,9 +257,10 @@ int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_
     return EXT2_READ_FAILED;
 }
 
-int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count) {
+int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count, uint64_t skip) {
     uint64_t blocks = DIVIDE_ROUNDED_UP(count, 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size));
-    int64_t result = ext2_read_inode_blocks(partition, inode_number, destination_buffer, blocks);
+    uint64_t blocks_to_skip = skip / (1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size));
+    int64_t result = ext2_read_inode_blocks(partition, inode_number, destination_buffer, blocks, blocks_to_skip);
     if (result == EXT2_READ_FAILED) return EXT2_READ_FAILED;
     return result * (1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size));
 }
@@ -267,7 +272,7 @@ void ext2_list_directory(struct ext2_partition* partition, const char * path) {
 
     if (root_inode->i_mode & INODE_TYPE_DIR) {
         uint8_t *block_buffer = malloc(root_inode->i_size + block_size);
-        ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size);
+        ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size, 0);
 
         uint32_t parsed_bytes = 0;
 
@@ -286,7 +291,7 @@ uint32_t ext2_inode_from_path_and_parent(struct ext2_partition* partition, uint3
     struct ext2_inode_descriptor_generic * root_inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, parent_inode);
     if (root_inode->i_mode & INODE_TYPE_DIR) {
         uint8_t *block_buffer = malloc(root_inode->i_size + block_size);
-        ext2_read_inode_bytes(partition, parent_inode, block_buffer, root_inode->i_size);
+        ext2_read_inode_bytes(partition, parent_inode, block_buffer, root_inode->i_size, 0);
 
         uint32_t parsed_bytes = 0;
 
@@ -329,13 +334,13 @@ uint64_t ext2_get_file_size(struct ext2_partition* partition, const char* path) 
 }
 
 //Hey this may corrupt memory
-uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size) {
+uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size, uint64_t skip) {
     uint32_t inode_index = ext2_path_to_inode(partition, path);
     if (!inode_index) {printf("err ino index\n");return 0;}
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
     if (inode->i_mode & INODE_TYPE_DIR) {printf("err ino type\n");return 0;}
     if (inode->i_size < size) size = inode->i_size;
-    int64_t read_bytes = ext2_read_inode_bytes(partition, inode_index, destination_buffer, size);
+    int64_t read_bytes = ext2_read_inode_bytes(partition, inode_index, destination_buffer, size, skip);
     if (read_bytes == EXT2_READ_FAILED) {printf("err file read bytes\n");return 0;}
     if (read_bytes <= 0) {printf("err read bytes\n");return 0;}
     return 1;

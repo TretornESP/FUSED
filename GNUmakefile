@@ -23,14 +23,14 @@ TESTDIR := ./test
 INFILE := test.input
 OUTFILE := test.output
 TESTBLK := 1024
-TESTCNT := 700000
+TESTCNT := 7000
 RAW := raw.img
 DUMMY := dummy.img
 
 FS := ext2#Warning, this must be mkfs compatible
 BLKSIZE := 1024
-SECTSIZE = 4096
-SECTCOUNT = 512000
+SECTSIZE = 1024
+SECTCOUNT = 10000
 DIRS := $(wildcard $(SRCDIR)/*)
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
 
@@ -80,6 +80,7 @@ upload:
 
 .PHONY: test
 test:
+	@make reset
 	@make
 	@make test2
 test2:
@@ -97,6 +98,7 @@ reset:
 	@rm -rf $(TESTDIR)
 	@mkdir -p $(TESTDIR)
 	@dd if=/dev/random of=$(TESTDIR)/$(INFILE) bs=$(TESTBLK) count=$(TESTCNT)
+	@dd if=/dev/random bs=1 count=7 >> $(TESTDIR)/$(INFILE)
 	@rm -f $(IMGDIR)/$(DUMMY)
 	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
 	@mkfs.$(FS) $(IMGDIR)/$(DUMMY) -b $(BLKSIZE)
