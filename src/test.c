@@ -13,7 +13,7 @@ int main(int argc, char *argv[]) {
     
     const char drive[]= "/mnt/hda";
     
-    register_drive("/mnt/c/Users/85562/FUSED/build/img/dummy.img", drive, 512);
+    register_drive("/mnt/c/Users/xabier.iglesias/fuse/build/img/dummy.img", drive, 512);
     if (ext2_search(drive, 0)) {
         if (register_ext2_partition(drive, 0)) {
             printf("Registered ext2 partition\n");
@@ -47,11 +47,23 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
+        printf("Listing files:\n");
+        ext2_list_directory(partition, "/");
+        printf("Listing files done\n");
+
         if (partition) {
             if (ext2_read_file(partition, "/test.input", buffer, file_size, TEST_SKIP)) {
-                FILE * file = fopen("./test/test.output", "wb");
-                fwrite(buffer, 1, file_size, file);
-                fclose(file);
+                if (ext2_write_file(partition, "/test.output", buffer, file_size, TEST_SKIP)) {
+                    free(buffer);
+                    buffer = malloc(file_size);
+                    ext2_read_file(partition, "/test.output", buffer, file_size, TEST_SKIP);
+                    FILE * file = fopen("./test/test.output", "wb");
+                    fwrite(buffer, 1, file_size, file);
+                    fclose(file);
+                    printf("File copied\n");
+                } else {
+                    printf("Failed to copy file\n");
+                }
             } else {
                 printf("Failed to read file\n");
             }

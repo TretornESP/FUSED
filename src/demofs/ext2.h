@@ -246,6 +246,7 @@ int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_n
 void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
 uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path);
 
+uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, uint8_t * source_buffer, uint64_t size, uint64_t skip);
 struct ext2_partition * register_ext2_partition(const char* disk, uint32_t lba);
 uint8_t unregister_ext2_partition(char letter);
 #endif
