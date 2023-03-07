@@ -54,7 +54,6 @@ uint8_t ext2_check_status(const char* disk) {
     return 1;
 }
 
-
 struct ext2_partition * get_partition(const char * partno) {
     struct ext2_partition * partition = ext2_partition_head;
     while (partition != 0) {
@@ -225,6 +224,7 @@ struct ext2_partition * register_ext2_partition(const char* disk, uint32_t lba) 
     partition->lba = lba;
     partition->sector_size = sector_size;
     partition->sb = malloc(1024);
+    partition->bgdt_block = bgdt_block; 
     memcpy(partition->sb, superblock, 1024);
     partition->gd = malloc(block_group_descriptors_size * sector_size);
     memcpy(partition->gd, block_group_descriptor, block_group_descriptors_size * sector_size);
@@ -232,6 +232,39 @@ struct ext2_partition * register_ext2_partition(const char* disk, uint32_t lba) 
     printf("[EXT2] Partition %s has: %d groups\n", partition->name, block_groups_first);
 
     return partition;
+}
+
+uint8_t ext2_dump_bg(struct ext2_block_group_descriptor * bg, uint32_t id) {
+    printf("Block group %d:\n", id);
+    printf("  Block bitmap: %d\n", bg->bg_block_bitmap);
+    printf("  Inode bitmap: %d\n", bg->bg_inode_bitmap);
+    printf("  Inode table: %d\n", bg->bg_inode_table);
+    printf("  Free blocks: %d\n", bg->bg_free_blocks_count);
+    printf("  Free inodes: %d\n", bg->bg_free_inodes_count);
+    printf("  Directories: %d\n", bg->bg_used_dirs_count);
+    return 0;
+}
+
+uint8_t ext2_bg_has_free_inodes(struct ext2_block_group_descriptor * bg, uint32_t id) {
+    (void)id;
+    return bg->bg_free_inodes_count > 0;
+}
+
+int32_t ext2_operate_on_bg(struct ext2_partition * partition, uint8_t (*callback)(struct ext2_block_group_descriptor*, uint32_t)) {
+    uint32_t i;
+    for (i = 0; i < partition->group_number; i++) {
+        if (callback(&partition->gd[i], i)) 
+            return (int32_t)i;
+    }
+
+    return -1;
+}
+
+void ext2_flush_structures(struct ext2_partition * partition) {
+    uint32_t block_group_descriptors_size = DIVIDE_ROUNDED_UP(partition->group_number * sizeof(struct ext2_block_group_descriptor), partition->sector_size);
+    uint32_t blocks_per_group = ((struct ext2_superblock*)(partition->sb))->s_blocks_per_group;
+    write_disk(partition->disk, (uint8_t*)partition->gd, partition->lba+(blocks_per_group*partition->bgdt_block), block_group_descriptors_size);
+    write_disk(partition->disk, (uint8_t*)partition->sb, partition->lba, 2);
 }
 
 uint32_t ext2_count_partitions() {
@@ -460,7 +493,7 @@ int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_
 
     uint32_t blocks_read = 0;
     int64_t read_result = 0;
-
+    printf("[EXT2] First file block: %d\n", inode->i_block[0]);
     read_result = ext2_read_direct_blocks(partition, inode->i_block, 12, destination_buffer, count);
     if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
     blocks_read += read_result;
@@ -525,18 +558,18 @@ uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uin
 
 //WRITE LOGIC
 
-int64_t ext2_write_block(struct ext2_partition* partition, uint32_t block, uint8_t * destination_buffer) {
+int64_t ext2_write_block(struct ext2_partition* partition, uint32_t block, uint8_t * source_buffer) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint32_t block_sectors = DIVIDE_ROUNDED_UP(block_size, partition->sector_size);
     uint32_t block_lba = (block * block_size) / partition->sector_size;
 
     if (block) {
-        if (read_disk(partition->disk, destination_buffer, partition->lba + block_lba, block_sectors)) {
-            printf("[EXT2] Failed to read block %d\n", block);
-            return EXT2_READ_FAILED;
+        if (write_disk(partition->disk, source_buffer, partition->lba + block_lba, block_sectors)) {
+            printf("[EXT2] Failed to write block %d\n", block);
+            return EXT2_WRITE_FAILED;
         }
     } else {
-        printf("[EXT2] Attempted to read block 0\n");
+        printf("[EXT2] Attempted to write block 0\n");
         return 0;
     }
 
@@ -708,6 +741,108 @@ int64_t ext2_write_inode_bytes(struct ext2_partition* partition, uint32_t inode_
     return result * (1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size));
 }
 
+void ext2_dump_inode_bitmap(struct ext2_partition * partition) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    uint32_t block_group_count = partition->group_number;
+    
+    for (uint32_t i = 0; i < block_group_count; i++) {
+        struct ext2_block_group_descriptor * bgd = (struct ext2_block_group_descriptor *)&partition->gd[i];
+        uint8_t * bitmap = (uint8_t*)ext2_buffer_for_size(partition, block_size);
+        if (ext2_read_block(partition, bgd->bg_inode_bitmap, bitmap) <= 0) {
+            printf("[EXT2] Failed to read inode bitmap\n");
+            free(bitmap);
+            return;
+        }
+
+        printf("[EXT2] Inode bitmap for block group %d\n", i);
+        for (uint32_t j = 0; j < block_size; j++) {
+            printf("%02x ", bitmap[j]);
+        }
+        printf("\n");
+
+        free(bitmap);
+    }
+}
+
+uint32_t ext2_allocate_inode(struct ext2_partition * partition) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+
+    //ext2_operate_on_bg(partition, ext2_dump_bg);
+    //ext2_dump_inode_bitmap(partition);
+
+    int32_t ext2_block_group_id = ext2_operate_on_bg(partition, ext2_bg_has_free_inodes);
+    if (ext2_block_group_id == -1) {
+        printf("[EXT2] No block group with free inodes\n");
+        return 0;
+    }
+
+    struct ext2_block_group_descriptor * bgd = (struct ext2_block_group_descriptor *)&partition->gd[ext2_block_group_id];
+
+    if (bgd == 0) {
+        printf("[EXT2] No bg with free inodes\n");
+        return 0;
+    }
+
+    printf("[EXT2] Found bg with free inodes\n");
+
+    uint8_t * inode_bitmap = (uint8_t*)ext2_buffer_for_size(partition, block_size);
+    if (ext2_read_block(partition, bgd->bg_inode_bitmap, inode_bitmap) <= 0) {
+        printf("[EXT2] Failed to read inode bitmap\n");
+        free(inode_bitmap);
+        return 0;
+    }
+
+    uint32_t inode_number = 0;
+    for (uint32_t i = 0; i < block_size; i++) {
+        if (inode_bitmap[i] != 0xFF) {
+            for (uint32_t j = 0; j < 8; j++) {
+                if ((inode_bitmap[i] & (1 << j)) == 0) {
+                    inode_number = i * 8 + j + 1;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+
+    if (inode_number == 0) {
+        printf("[EXT2] No free inodes\n");
+        free(inode_bitmap);
+        return 0;
+    }
+
+    printf("[EXT2] Found free inode: %d\n", inode_number);
+
+    inode_bitmap[inode_number / 8] |= 1 << (inode_number % 8);
+    if (ext2_write_block(partition, bgd->bg_inode_bitmap, inode_bitmap) <= 0) {
+        printf("[EXT2] Failed to write inode bitmap\n");
+        free(inode_bitmap);
+        return 0;
+    }
+    free(inode_bitmap);
+
+    bgd->bg_free_inodes_count--;
+
+    //Update superblock
+    struct ext2_superblock_extended * sb = (struct ext2_superblock_extended*)partition->sb;
+    ((struct ext2_superblock*)sb)->s_free_inodes_count--;
+
+    //Update partition
+    partition->sb = sb;
+    partition->gd[ext2_block_group_id] = *bgd;
+
+    printf("[EXT2] Inode bitmap for block group %d\n", ext2_block_group_id);
+    for (uint32_t i = 0 ; i < block_size; i++) {
+        printf("%02x ", inode_bitmap[i]);
+    }
+    printf("\n");
+    ext2_operate_on_bg(partition, ext2_dump_bg);
+    ext2_dump_inode_bitmap(partition);
+
+    ext2_flush_structures(partition);
+    return inode_number;
+}
+
 uint8_t ext2_path_to_parent_and_name(const char* source, char** path, char** name) {
     uint64_t path_length = strlen(source);
     if (path_length == 0) return 0;
@@ -755,6 +890,14 @@ uint8_t ext2_create_file(struct ext2_partition * partition, const char* path) {
     }
 
     printf("[EXT2] Parent inode is a directory, ready to allocate\n");
+
+    uint32_t new_inode_index = ext2_allocate_inode(partition);
+    if (!new_inode_index) {
+        printf("[EXT2] Failed to allocate inode\n");
+        return 0;
+    }
+
+    printf("[EXT2] Allocated inode %d\n", new_inode_index);
     return 1;
 }
 
@@ -763,9 +906,11 @@ uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, ui
     if (!inode_index) {
         printf("[EXT2] File doesn't exist, trying to create it\n");
         if (!ext2_create_file(partition, path)) {
-            printf("[EXT2] Failed to create file\n");
+            printf("[EXT2] Failed to create file 1\n");
             return 0;
         }
+
+        printf("[EXT2] File created, trying to get inode\n");
         return 0;
     }
 

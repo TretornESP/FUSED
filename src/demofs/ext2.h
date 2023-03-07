@@ -13,6 +13,7 @@
 #define EXT2_ROOT_INO_INDEX 2
 #define EXT2_EOF 0xFFFFFFFF
 #define EXT2_READ_FAILED 0xFFFFFFFE
+#define EXT2_WRITE_FAILED 0xFFFFFFFD
 //FS State
 #define EXT2_FS_CLEAN       1
 #define EXT2_FS_ERRORS      2
@@ -214,6 +215,7 @@ struct ext2_partition {
     uint32_t lba;
     uint32_t group_number;
     uint32_t sector_size;
+    uint32_t bgdt_block;
     struct ext2_superblock_extended *sb;
     struct ext2_block_group_descriptor *gd;
     struct ext2_partition *next;
@@ -245,7 +247,7 @@ int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_
 int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
 void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
 uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path);
-
+int64_t ext2_write_block(struct ext2_partition* partition, uint32_t block, uint8_t * source_buffer);
 uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, uint8_t * source_buffer, uint64_t size, uint64_t skip);
 struct ext2_partition * register_ext2_partition(const char* disk, uint32_t lba);
 uint8_t unregister_ext2_partition(char letter);
