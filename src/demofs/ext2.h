@@ -216,6 +216,7 @@ struct ext2_partition {
     uint32_t group_number;
     uint32_t sector_size;
     uint32_t bgdt_block;
+    uint32_t sb_block;
     struct ext2_superblock_extended *sb;
     struct ext2_block_group_descriptor *gd;
     struct ext2_partition *next;
