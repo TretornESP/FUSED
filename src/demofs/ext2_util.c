@@ -1,0 +1,61 @@
+#include "ext2.h"
+#include "ext2_util.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+uint32_t ext2_unique_id = EXT2_UNIQUE_START;
+
+void epoch_to_date(char* date, uint32_t epoch) {
+    time_t t = epoch;
+    struct tm *tm = localtime(&t);
+    strftime(date, 32, "%Y-%m-%d %H:%M:%S", tm);
+}
+
+uint8_t * ext2_buffer_for_size(struct ext2_partition * partition, uint64_t size) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    uint32_t blocks_for_size = DIVIDE_ROUNDED_UP(size, block_size);
+    uint32_t buffer_size = blocks_for_size * block_size;
+
+    return malloc(buffer_size);
+}
+
+uint32_t ext2_get_unique_id() {
+    //Check for overflow
+    if (ext2_unique_id == 0xFFFFFFFF) {
+        ext2_unique_id = EXT2_UNIQUE_START;
+    } else {
+        ext2_unique_id++;
+    }
+
+    return ext2_unique_id;
+}
+
+uint8_t ext2_path_to_parent_and_name(const char* source, char** path, char** name) {
+    uint64_t path_length = strlen(source);
+    if (path_length == 0) return 0;
+
+    uint64_t last_slash = 0;
+    for (uint64_t i = 0; i < path_length; i++) {
+        if (source[i] == '/') last_slash = i;
+    }
+
+    if (last_slash == 0) {
+        *path = (char*)malloc(2);
+        (*path)[0] = '/';
+        (*path)[1] = 0;
+        *name = (char*)malloc(path_length + 1);
+        memcpy(*name, source+1, path_length + 1);
+        return 1;
+    }
+
+    *path = (char*)malloc(last_slash + 1);
+    memcpy(*path, source, last_slash);
+    (*path)[last_slash] = 0;
+
+    *name = (char*)malloc(path_length - last_slash);
+    memcpy(*name, source + last_slash + 1, path_length - last_slash);
+    return 1;
+}
