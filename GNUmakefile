@@ -22,8 +22,9 @@ MOUNTPOINT := /mnt/$(FUSE)
 TESTDIR := ./test
 INFILE := test.input
 OUTFILE := test.output
+TESTEMPTY := 800
 TESTBLK := 1024
-TESTCNT := 7000
+TESTCNT := 700
 RAW := raw.img
 DUMMY := dummy.img
 
@@ -98,7 +99,7 @@ reset:
 	@rm -rf $(TESTDIR)
 	@mkdir -p $(TESTDIR)
 	@dd if=/dev/random of=$(TESTDIR)/$(INFILE) bs=$(TESTBLK) count=$(TESTCNT)
-	@dd if=/dev/random bs=1 count=7 >> $(TESTDIR)/$(INFILE)
+	@dd if=/dev/random bs=$(TESTBLK) count=$(TESTEMPTY) >> $(TESTDIR)/$(INFILE)
 	@rm -f $(IMGDIR)/$(DUMMY)
 	@cp $(IMGDIR)/$(RAW) $(IMGDIR)/$(DUMMY)
 	@mkfs.$(FS) $(IMGDIR)/$(DUMMY) -b $(BLKSIZE)

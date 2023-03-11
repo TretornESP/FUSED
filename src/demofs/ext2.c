@@ -1150,12 +1150,251 @@ uint8_t ext2_create_file(struct ext2_partition * partition, const char* path) {
         ext2_allocate_inode
         ext2_initialize_inode
     )
-)
+)a
 */
+
+//TODO: Optimize this so you start searching from the last block allocated
+uint32_t ext2_allocate_block(struct ext2_partition* partition) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    for (uint32_t i = 0; i < partition->group_number; i++) {
+        struct ext2_block_group_descriptor * block_group = &partition->gd[i];
+        if (!block_group) {
+            printf("[EXT2] Failed to read block group descriptor\n");
+            return 0;
+        }
+
+        if (block_group->bg_free_blocks_count == 0) {
+            printf("[EXT2] Block group %d is full\n", i);
+            continue;
+        }
+
+        uint32_t * block_bitmap = (uint32_t *)malloc(block_size);
+        if (!ext2_read_block(partition, block_group->bg_block_bitmap, (uint8_t*)block_bitmap)) {
+            printf("[EXT2] Failed to read block bitmap\n");
+            return 0;
+        }
+
+        for (uint32_t j = 0; j < block_size / sizeof(uint32_t); j++) {
+            if (block_bitmap[j] == 0xFFFFFFFF) continue;
+            for (uint32_t k = 0; k < 32; k++) {
+                if (!(block_bitmap[j] & (1 << k))) {
+                    //printf("[EXT2] Block %d is free\n", j * 32 + k + 1);
+                    block_bitmap[j] |= (1 << k);
+                    block_group->bg_free_blocks_count--;
+                    ((struct ext2_superblock*)partition->sb)->s_free_blocks_count--;
+                    if (ext2_write_block(partition, block_group->bg_block_bitmap, (uint8_t*)block_bitmap)  <= 0) {
+                        printf("[EXT2] Failed to write block bitmap\n");
+                        return 0;
+                    }
+
+                    uint32_t block = j * 32 + k + 1;
+                    block += i * ((struct ext2_superblock*)partition->sb)->s_blocks_per_group;
+                    //printf("[EXT2] Allocated block %d\n", block);
+                    return block;
+                }
+            }
+        }
+    }
+
+    printf("[EXT2] No free blocks\n");
+    return 0;
+}
+
+uint32_t ext2_allocate_indirect_block(struct ext2_partition* partition, uint32_t * target_block, uint32_t blocks_to_allocate) {
+        printf("[EXT2] Allocating block group\n");
+        uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+        if (!target_block) {
+            printf("[EXT2] Invalid target block\n");
+            return 0;
+        }
+        *target_block = ext2_allocate_block(partition);
+        if (!*target_block) {
+            printf("[EXT2] Failed to allocate block\n");
+            return 0;
+        }
+
+
+        uint32_t * block_buffer = (uint32_t *)malloc(block_size);
+        if (!block_buffer) {
+            printf("[EXT2] Failed to allocate memory for block buffer\n");
+            return 0;
+        }
+
+        uint32_t blocks_written = 0;
+        for (uint32_t j = 0; j < block_size / sizeof(uint32_t); j++) {
+            if (blocks_written == blocks_to_allocate) break;
+            block_buffer[j] = ext2_allocate_block(partition);
+            if (!block_buffer[j]) {
+                printf("[EXT2] Failed to allocate block\n");
+                free(block_buffer);
+                return 0;
+            }
+            blocks_written++;
+        }
+
+        if (ext2_write_block(partition, *target_block, (uint8_t*)block_buffer) <= 0) {
+            printf("[EXT2] Failed to write block\n");
+            free(block_buffer);
+            return 0;
+        }
+
+        free(block_buffer);
+        return blocks_written;
+}
+
+uint32_t ext2_allocate_double_indirect_block(struct ext2_partition* partition, uint32_t * target_block, uint32_t blocks_to_allocate) {
+    printf("[EXT2] Allocating double indirect block\n");
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    if (!target_block) {
+        printf("[EXT2] Invalid target block\n");
+        return 0;
+    }
+    *target_block = ext2_allocate_block(partition);
+    if (!*target_block) {
+        printf("[EXT2] Failed to allocate block\n");
+        return 0;
+    }
+
+    uint32_t * block_buffer = (uint32_t *)malloc(block_size);
+    if (!block_buffer) {
+        printf("[EXT2] Failed to allocate memory for block buffer\n");
+        return 0;
+    }
+
+    uint32_t blocks_written = 0;
+    for (uint32_t j = 0; j < block_size / sizeof(uint32_t); j++) {
+        if (blocks_written == blocks_to_allocate) break;
+        blocks_written += ext2_allocate_indirect_block(partition, &block_buffer[j], blocks_to_allocate - blocks_written);
+    }
+
+    if (ext2_write_block(partition, *target_block, (uint8_t*)block_buffer) <= 0) {
+        printf("[EXT2] Failed to write block\n");
+        free(block_buffer);
+        return 0;
+    }
+
+    free(block_buffer);
+    return blocks_written;
+}
+
+uint32_t ext2_allocate_triple_indirect_block(struct ext2_partition* partition, uint32_t * target_block, uint32_t blocks_to_allocate) {
+    printf("[EXT2] Allocating triple indirect block\n");
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    if (!target_block) {
+        printf("[EXT2] Invalid target block\n");
+        return 0;
+    }
+    *target_block = ext2_allocate_block(partition);
+    if (!*target_block) {
+        printf("[EXT2] Failed to allocate block\n");
+        return 0;
+    }
+
+    uint32_t * block_buffer = (uint32_t *)malloc(block_size);
+    if (!block_buffer) {
+        printf("[EXT2] Failed to allocate memory for block buffer\n");
+        return 0;
+    }
+
+    uint32_t blocks_written = 0;
+    for (uint32_t j = 0; j < block_size / sizeof(uint32_t); j++) {
+        if (blocks_written == blocks_to_allocate) break;
+        blocks_written += ext2_allocate_double_indirect_block(partition, &block_buffer[j], blocks_to_allocate - blocks_written);
+    }
+
+    if (ext2_write_block(partition, *target_block, (uint8_t*)block_buffer) <= 0) {
+        printf("[EXT2] Failed to write block\n");
+        free(block_buffer);
+        return 0;
+    }
+
+    free(block_buffer);
+    return blocks_written;
+}
+
+uint8_t ext2_resize_file(struct ext2_partition* partition, uint32_t inode_index, uint32_t new_size) {
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    if (!inode) {
+        printf("[EXT2] Failed to read inode\n");
+        return 0;
+    }
+
+    if (inode->i_size == new_size) {
+        printf("[EXT2] File is already of the requested size\n");
+        return 1;
+    }
+
+    if (inode->i_size > new_size) {
+        printf("[EXT2] Shrinking files is not supported yet\n");
+        return 0;
+    }
+
+    uint32_t blocks_to_allocate = (new_size - inode->i_size) / block_size;
+    if ((new_size - inode->i_size) % block_size) blocks_to_allocate++;
+
+    printf("[EXT2] Resizing file to %d bytes, allocating %d blocks\n", new_size, blocks_to_allocate);
+
+    uint32_t blocks_allocated = 0;
+    for (uint32_t i = 0; i < 12; i++) {
+        if (blocks_allocated == blocks_to_allocate) break;
+        if (!inode->i_block[i]) {
+            inode->i_block[i] = ext2_allocate_block(partition);
+            if (!inode->i_block[i]) {
+                printf("[EXT2] Failed to allocate block\n");
+                goto write_inode;
+            }
+            blocks_allocated++;
+        }
+    }
+
+    if (blocks_allocated == blocks_to_allocate) {
+        printf("[EXT2] Allocated all blocks\n");
+        goto write_inode;
+    }
+
+    blocks_allocated += ext2_allocate_indirect_block(partition, &inode->i_block[12], blocks_to_allocate - blocks_allocated);
+
+    if (blocks_allocated == blocks_to_allocate) {
+        printf("[EXT2] Allocated all blocks\n");
+        goto write_inode;
+    }
+
+    blocks_allocated += ext2_allocate_double_indirect_block(partition, &inode->i_block[13], blocks_to_allocate - blocks_allocated);
+
+    if (blocks_allocated == blocks_to_allocate) {
+        printf("[EXT2] Allocated all blocks\n");
+        goto write_inode;
+    }
+
+    blocks_allocated += ext2_allocate_triple_indirect_block(partition, &inode->i_block[14], blocks_to_allocate - blocks_allocated);
+
+    if (blocks_allocated == blocks_to_allocate) {
+        printf("[EXT2] Allocated all blocks\n");
+        goto write_inode;
+    }
+
+    printf("[EXT2] Failed to allocate all blocks\n");
+    return 0;
+
+write_inode:
+
+    inode->i_size = new_size;
+    if (!ext2_write_inode(partition, inode_index, (struct ext2_inode_descriptor*)inode)) {
+        printf("[EXT2] Failed to write inode\n");
+        return 0;
+    }
+
+    ext2_flush_structures(partition);
+    return 1;
+}
 
 uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, uint8_t * source_buffer, uint64_t size, uint64_t skip) {
     //TODO: Skip
-    (void)skip;
+    if (skip) {
+        printf("[EXT2] Skipping is not supported yet\n");
+        return 0;
+    }
 
     uint32_t inode_index = ext2_path_to_inode(partition, path);
     if (!inode_index) {
@@ -1173,6 +1412,21 @@ uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, ui
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
     if (inode->i_mode & INODE_TYPE_DIR) {printf("err ino type\n");return 0;}
 
+    if (size + skip > inode->i_size) {
+        printf("[EXT2] File is too small, resizing\n");
+        if (ext2_resize_file(partition, inode_index, size + skip)) {
+            printf("[EXT2] Failed to resize file\n");
+            return 0;
+        }
+    }
+
+    struct ext2_inode_descriptor_generic * inode_after = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
+    if (inode_after->i_size != size + skip) {
+        printf("[EXT2] File size is not correct\n");
+        return 0;
+    } else {
+        printf("[EXT2] File size is correct\n");
+    }
 
     int64_t write_bytes = ext2_write_inode_bytes(partition, inode_index, source_buffer, size);
     if (write_bytes == EXT2_WRITE_FAILED) {printf("err file write bytes\n");return 0;}
