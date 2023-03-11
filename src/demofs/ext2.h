@@ -9,6 +9,7 @@
 #define MAX_DISK_NAME_LENGTH    32
 #define EXT2_SUPER_MAGIC        0xEF53
 #define EXT2_NAME_LEN           255
+#define EXT2_UNIQUE_START       0x00CAFE00
 
 #define EXT2_ROOT_INO_INDEX 2
 #define EXT2_EOF 0xFFFFFFFF
@@ -206,7 +207,7 @@ struct ext2_directory_entry {
     uint16_t rec_len;               /* Directory entry length */
     uint8_t  name_len;              /* Name length */
     uint8_t  file_type;             /* File type */
-    char     name[EXT2_NAME_LEN];   /* File name */
+    char     name[EXT2_NAME_LEN];   /* File name */ //IM SO FUCKING DUMB
 } __attribute__((packed));
 
 struct ext2_partition {
@@ -237,11 +238,11 @@ uint32_t ext2_count_partitions();
 struct ext2_partition * ext2_get_partition_by_index(uint32_t index);
 
 uint8_t * ext2_buffer_for_size(struct ext2_partition * partition, uint64_t size);
-
+uint8_t ext2_create_file(struct ext2_partition * partition, const char* path);
 uint64_t ext2_get_file_size(struct ext2_partition* partition, const char * path);
 void ext2_list_directory(struct ext2_partition* partition, const char * path);
 uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size, uint64_t offset);
-
+void ext2_debug_print_file_inode(struct ext2_partition* partition, uint32_t inode_number);
 struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition, uint32_t inode_index);
 uint32_t ext2_index_from_inode(struct ext2_partition* partition, struct ext2_inode_descriptor * inode);
 int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);

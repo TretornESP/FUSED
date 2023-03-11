@@ -13,7 +13,7 @@ int main(int argc, char *argv[]) {
     
     const char drive[]= "/mnt/hda";
     
-    register_drive("/mnt/c/Users/xabier.iglesias/fuse/build/img/dummy.img", drive, 512);
+    register_drive("/mnt/c/Users/85562/FUSED/build/img/dummy.img", drive, 512);
     if (ext2_search(drive, 0)) {
         if (register_ext2_partition(drive, 0)) {
             printf("Registered ext2 partition\n");
@@ -53,6 +53,14 @@ int main(int argc, char *argv[]) {
 
         if (partition) {
             if (ext2_read_file(partition, "/test.input", buffer, file_size, TEST_SKIP)) {
+                if (ext2_create_file(partition, "/test.output")) {
+                    printf("Failed to create file\n");
+                    return 0;
+                }
+                
+                printf("Listing files after creation:\n");
+                ext2_list_directory(partition, "/");
+                printf("Copying file...\n");
                 if (ext2_write_file(partition, "/test.output", buffer, file_size, TEST_SKIP)) {
                     free(buffer);
                     buffer = malloc(file_size);
