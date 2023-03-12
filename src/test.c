@@ -1,7 +1,5 @@
 #include "fused/bfuse.h"
 #include "demofs/ext2.h"
-#include "demofs/ext2_partition.h"
-#include "demofs/ext2_superblock.h"
 #include <stdio.h>
 #include <stdlib.h>
 

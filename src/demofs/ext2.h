@@ -1,13 +1,59 @@
 //https://wiki.osdev.org/Ext2
 #ifndef _EXT2_H
 #define _EXT2_H
-
 #include <stdint.h>
 
-//Fix by FunkyWaddle: Inverted values
-#define DIVIDE_ROUNDED_UP(x, y) ((x % y) ? ((x) + (y) - 1) / (y) : (x) / (y))
-#define SWAP_ENDIAN_16(x) (((x) >> 8) | ((x) << 8))
+#define SB_OFFSET_LBA           2
+#define BGDT_BLOCK              1
+#define BLOCK_NUMBER            4
+#define MAX_DISK_NAME_LENGTH    32
+#define EXT2_SUPER_MAGIC        0xEF53
 #define EXT2_NAME_LEN           255
+#define EXT2_UNIQUE_START       0x00CAFE00
+
+#define EXT2_ROOT_INO_INDEX 2
+#define EXT2_EOF 0xFFFFFFFF
+#define EXT2_READ_FAILED 0xFFFFFFFE
+#define EXT2_WRITE_FAILED 0xFFFFFFFD
+//FS State
+#define EXT2_FS_CLEAN       1
+#define EXT2_FS_ERRORS      2
+
+#define EXT2_DIRECT_BLOCKS 12
+#define EXT2_INDIRECT_BLOCKS(blocksize, sizeo_of_entry) ((blocksize / sizeo_of_entry))
+#define EXT2_DOUBLE_INDIRECT_BLOCKS(blocksize, sizeo_of_entry) ((blocksize / sizeo_of_entry) * (blocksize / sizeo_of_entry))
+#define EXT2_TRIPLE_INDIRECT_BLOCKS(blocksize, sizeo_of_entry) ((blocksize / sizeo_of_entry) * (blocksize / sizeo_of_entry) * (blocksize / sizeo_of_entry))
+
+//Error handling methods
+#define EXT2_IGNORE_ERRORS  1
+#define EXT2_REMOUNT_RO     2
+#define EXT2_KERNEL_PANIC   3
+
+//Creator OS id
+#define EXT2_LINUX          0
+#define EXT2_HURD           1
+#define EXT2_MASIX          2
+#define EXT2_FREEBSD        3
+#define EXT2_LITES          4
+
+//Optional feature flags
+#define PREALLOCATE_BLOCKS_FLAG     0x0001
+#define AFS_SERVER_INODES_FLAG      0x0002
+#define HAS_JOURNAL_FLAG            0x0004
+#define INODES_EXT_ATTRIBS_FLAG     0x0008
+#define CAN_RESIZE_FS_FLAG          0x0010
+#define HASH_DIRECTORY_INDEX_FLAG   0x0020
+
+//Required feature flags
+#define COMPRESSION_USED            0x0001
+#define DIRECTORY_ENTRIES_TYPE_FILE 0x0002
+#define FS_NEEDS_JOURNAL_REPLAY     0x0004
+#define FS_USES_JOURNAL_DEVICE      0x0008
+
+//Read-only feature flags
+#define SPARSE_SUPERBLOCKS          0x0001
+#define FS_USES_64BIT_FILESIZE      0x0002
+#define DIR_ENTRIES_TYPE_BTREE      0x0004
 
 struct ext2_superblock {
     uint32_t s_inodes_count;        /* Inodes count */
@@ -69,6 +115,101 @@ struct ext2_block_group_descriptor {
     uint8_t  bg_pad[14];            /* Padding to the end of the block */
 } __attribute__((packed));
 
+//Inode type and permissions
+#define INODE_TYPE_FIFO          0x1000
+#define INODE_TYPE_CHARDEV       0x2000
+#define INODE_TYPE_DIR           0x4000
+#define INODE_TYPE_BLOCKDEV      0x6000
+#define INODE_TYPE_FILE          0x8000
+#define INODE_TYPE_SYMLINK       0xA000
+#define INODE_TYPE_SOCKET        0xC000
+
+#define INODE_PERM_OTHER_EXEC    0x0001
+#define INODE_PERM_OTHER_WRITE   0x0002
+#define INODE_PERM_OTHER_READ    0x0004
+#define INODE_PERM_GROUP_EXEC    0x0008
+#define INODE_PERM_GROUP_WRITE   0x0010
+#define INODE_PERM_GROUP_READ    0x0020
+#define INODE_PERM_USER_EXEC     0x0040
+#define INODE_PERM_USER_WRITE    0x0080
+#define INODE_PERM_USER_READ     0x0100
+#define INODE_PERM_STICKY        0x0200
+#define INODE_PERM_SETGID        0x0400
+#define INODE_PERM_SETUID        0x0800
+
+//Inode flags
+#define INODE_FLAG_SECRM         0x00000001
+#define INODE_FLAG_KEEP_COPY     0x00000002
+#define INODE_FLAG_FILE_COMPRESS 0x00000004
+#define INODE_FLAG_SYNC          0x00000008
+#define INODE_FLAG_IMMUTABLE     0x00000010
+#define INODE_FLAG_APPEND        0x00000020
+#define INODE_FLAG_NO_DUMP       0x00000040
+#define INODE_FLAG_NO_ATIME      0x00000080
+#define INODE_FLAG_HASH_INDEXED  0x00010000
+#define INODE_FLAG_AFS_DIR       0x00020000
+#define INODE_FLAG_JOURNAL_DATA  0x00040000
+
+struct ext2_inode_descriptor_generic {
+    uint16_t i_mode;                /* File mode */
+    uint16_t i_uid;                 /* Low 16 bits of Owner Uid */
+    uint32_t i_size;                /* Size in bytes */
+    uint32_t i_atime;               /* Access time */
+    uint32_t i_ctime;               /* Creation time */
+    uint32_t i_mtime;               /* Modification time */
+    uint32_t i_dtime;               /* Deletion Time */
+    uint16_t i_gid;                 /* Low 16 bits of Group Id */
+    uint16_t i_links_count;         /* Links count */
+    uint32_t i_sectors;             /* sector count */
+    uint32_t i_flags;               /* File flags */
+    uint32_t i_osd1;                /* OS dependent 1 */
+    uint32_t i_block[15];           /* Pointers to blocks */
+    uint32_t i_generation;          /* File version (for NFS) */
+    uint32_t i_file_acl;            /* File ACL */
+    uint32_t i_dir_acl;             /* Directory ACL */
+    uint32_t i_faddr;               /* Fragment address */
+} __attribute__((packed));
+
+struct ext2_inode_descriptor {
+    struct ext2_inode_descriptor_generic id;
+    uint8_t  i_osd2[12];            /* OS dependent 2 */
+} __attribute__((packed));
+
+struct ext2_inode_descriptor_linux {
+    struct   ext2_inode_descriptor_generic id;
+    uint8_t  i_fragment_no;          /* Fragment number */
+    uint8_t  i_fragment_size;        /* Fragment size */
+    uint16_t i_osd2;                /* OS dependent 2 */
+    uint16_t i_high_uid;            /* High 16 bits of Owner Uid */
+    uint16_t i_high_gid;            /* High 16 bits of Group Id */
+    uint32_t i_reserved;
+} __attribute__((packed));
+
+struct ext2_inode_descriptor_hurd {
+    struct   ext2_inode_descriptor_generic id;
+    uint8_t  i_frag;               /* Fragment number */
+    uint8_t  i_fsize;               /* Fragment size */
+    uint16_t i_high_type_perm;      /* High 16 bits of Type and Permission */
+    uint16_t i_high_uid;            /* High 16 bits of Owner Uid */
+    uint16_t i_high_gid;            /* High 16 bits of Group Id */
+    uint32_t i_author_id;           /* Author ID */
+} __attribute__((packed));
+
+struct ext2_inode_descriptor_masix {
+    struct  ext2_inode_descriptor_generic id;
+    uint8_t i_frag;                 /* Fragment number */
+    uint8_t i_fsize;                /* Fragment size */
+    uint8_t i_reserved[10];         /* Reserved */    
+} __attribute__((packed));
+
+struct ext2_directory_entry {
+    uint32_t inode;                 /* Inode number */
+    uint16_t rec_len;               /* Directory entry length */
+    uint8_t  name_len;              /* Name length */
+    uint8_t  file_type;             /* File type */
+    char     name[EXT2_NAME_LEN];   /* File name */ //IM SO FUCKING DUMB
+} __attribute__((packed));
+
 struct ext2_partition {
     char name[32];
     char disk[32];
@@ -82,14 +223,6 @@ struct ext2_partition {
     struct ext2_partition *next;
 };
 
-struct ext2_directory_entry {
-    uint32_t inode;                 /* Inode number */
-    uint16_t rec_len;               /* Directory entry length */
-    uint8_t  name_len;              /* Name length */
-    uint8_t  file_type;             /* File type */
-    char     name[EXT2_NAME_LEN];   /* File name */ //IM SO FUCKING DUMB
-} __attribute__((packed));
-
 //Directory entry types
 #define EXT2_DIR_TYPE_UNKNOWN   0
 #define EXT2_DIR_TYPE_REGULAR   1
@@ -100,14 +233,24 @@ struct ext2_directory_entry {
 #define EXT2_DIR_TYPE_SOCKET    6
 #define EXT2_DIR_TYPE_SYMLINK   7
 
-void ext2_list_directory(struct ext2_partition* partition, const char * path);
-uint8_t ext2_flush_structures(struct ext2_partition * partition);
-uint8_t ext2_search(const char* name, uint32_t lba);
-uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size, uint64_t skip);
-void ext2_dump_inode_bitmap(struct ext2_partition * partition);
-uint8_t ext2_create_directory_entry(struct ext2_partition* partition, uint32_t inode_number, uint32_t child_inode, const char* name, uint32_t type);
-uint8_t ext2_create_file(struct ext2_partition * partition, const char* path);
-uint8_t ext2_resize_file(struct ext2_partition* partition, uint32_t inode_index, uint32_t new_size);
-uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, uint8_t * source_buffer, uint64_t size, uint64_t skip);
+uint8_t ext2_search(const char*, uint32_t);
+uint32_t ext2_count_partitions();
+struct ext2_partition * ext2_get_partition_by_index(uint32_t index);
 
+uint8_t * ext2_buffer_for_size(struct ext2_partition * partition, uint64_t size);
+uint8_t ext2_create_file(struct ext2_partition * partition, const char* path);
+uint64_t ext2_get_file_size(struct ext2_partition* partition, const char * path);
+void ext2_list_directory(struct ext2_partition* partition, const char * path);
+uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size, uint64_t offset);
+void ext2_debug_print_file_inode(struct ext2_partition* partition, uint32_t inode_number);
+struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition, uint32_t inode_index);
+uint32_t ext2_index_from_inode(struct ext2_partition* partition, struct ext2_inode_descriptor * inode);
+int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
+int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count);
+void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
+uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path);
+int64_t ext2_write_block(struct ext2_partition* partition, uint32_t block, uint8_t * source_buffer);
+uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, uint8_t * source_buffer, uint64_t size, uint64_t skip);
+struct ext2_partition * register_ext2_partition(const char* disk, uint32_t lba);
+uint8_t unregister_ext2_partition(char letter);
 #endif
