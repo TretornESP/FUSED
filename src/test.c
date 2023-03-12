@@ -15,7 +15,7 @@ int main(int argc, char *argv[]) {
     
     register_drive("/mnt/c/Users/85562/FUSED/build/img/dummy.img", drive, 512);
     if (ext2_search(drive, 0)) {
-        if (register_ext2_partition(drive, 0)) {
+        if (ext2_register_partition(drive, 0)) {
             printf("Registered ext2 partition\n");
         } else {
             printf("Failed to register ext2 partition\n");
@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
     for (uint32_t i = 0; i < partitions; i++) {
 
         struct ext2_partition * partition = ext2_get_partition_by_index(i);
-        printf("Partition %d: %s\n", i, partition->name);
+        printf("Partition %d: %s\n", i, ext2_get_partition_name(partition));
 
         #ifndef TEST_SIZE
         uint64_t file_size = ext2_get_file_size(partition, "/test.input");
