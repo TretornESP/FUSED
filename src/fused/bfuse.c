@@ -21,9 +21,6 @@ void debug() {
 void add_mount(const char * mount_point, const char * file_name, u8 * buffer, u64 sector_size, u64 start_sector, u64 sector_count) {
 #else
 void add_mount(const char * mount_point, const char * file_name, int handle, u64 sector_size, u64 start_sector, u64 sector_count) {
-__fuse_strncpy(mount->ATA_REVISION, ATA_REV_STRING, 16);
-__fuse_strncpy(mount->ATA_MODEL, ATA_MODEL_STRING, 40);
-__fuse_strncpy(mount->ATA_SERIAL, ATA_SERIAL_STRING, 20);
 #endif
     struct mount * new_mount = __fuse_malloc(sizeof(struct mount));
     __fuse_strncpy(new_mount->mount_point, mount_point, __fuse_strlen(mount_point));
@@ -86,13 +83,13 @@ int load_file(const char* filename, u64 sector_size, u64 * sectors) {
     int file = __fuse_open(filename, __fuse_O_RDWR);
     if (file == -1) {
         __fuse_printf("Error opening file %s\n", filename);
-        return (void*)0x0;
+        goto error;
     }
 
     __fuse_struct_stat st;
     if (__fuse_fstat(file, &st) == -1) {
         __fuse_printf("Error getting file size\n");
-        return (void*)0x0;
+        goto error;
     }
 
     u64 file_size = st.st_size;
@@ -102,19 +99,32 @@ int load_file(const char* filename, u64 sector_size, u64 * sectors) {
     u8 * buffer = __fuse_mmap(0, file_size, __fuse_PROT_READ | __fuse_PROT_WRITE, __fuse_MAP_SHARED, file, 0);
     if (buffer == __fuse_MAP_FAILED) {
         __fuse_printf("Error mapping file\n");
-        return (void*)0x0;
+        goto error;
     }
     return buffer;
 #else
     return file;
+#endif
+
+error:
+#ifdef __EAGER
+    return (void*)0x0;
+#else
+    return 0;
 #endif
 }
 
 
 void register_drive(const char * filename, const char* mount_point, u32 sector_size) {
     u64 sector_count = 0;
-    u8 * buffer = load_file(filename, sector_size, &sector_count);
-    add_mount(mount_point, filename, buffer, sector_size, 0, sector_count);
+#ifdef __EAGER
+    u8 * reference;
+#else
+    int reference;
+#endif
+
+    reference = load_file(filename, sector_size, &sector_count);
+    add_mount(mount_point, filename, reference, sector_size, 0, sector_count);
 }
 
 void register_drive_subsection(const char* filename, const char* mount_point, u32 sector_size, u64 starting_sector, u64 sector_count) {

@@ -1,10 +1,16 @@
+#pragma GCC diagnostic ignored "-Wvariadic-macros"
+
 #include "ext2_bg.h"
 #include "ext2_util.h"
+#include "ext2_block.h"
+#include "ext2_integrity.h"
 
 #include "../fused/primitives.h"
 #include "../fused/auxiliary.h"
 
+
 #include <stdio.h>
+#include <stdlib.h>
 
 int32_t ext2_operate_on_bg(struct ext2_partition * partition, uint8_t (*callback)(struct ext2_partition *, struct ext2_block_group_descriptor*, uint32_t)) {
     uint32_t i;
@@ -25,15 +31,47 @@ uint8_t ext2_flush_bg(struct ext2_partition* partition, struct ext2_block_group_
     return 0;
 }
 
+void ext2_dump_all_bgs(struct ext2_partition* partition) {
+    ext2_operate_on_bg(partition, ext2_dump_bg);
+}
+
 uint8_t ext2_dump_bg(struct ext2_partition* partition, struct ext2_block_group_descriptor * bg, uint32_t id) {
-    (void)partition;
+    uint32_t block_size = 1024 << ((struct ext2_superblock*)(partition->sb))->s_log_block_size;
+
     printf("Block group %d:\n", id);
     printf("  Block bitmap: %d\n", bg->bg_block_bitmap);
     printf("  Inode bitmap: %d\n", bg->bg_inode_bitmap);
     printf("  Inode table: %d\n", bg->bg_inode_table);
     printf("  Free blocks: %d\n", bg->bg_free_blocks_count);
     printf("  Free inodes: %d\n", bg->bg_free_inodes_count);
-    printf("  Directories: %d\n", bg->bg_used_dirs_count);
+    printf("  Directories entries: %d\n", bg->bg_used_dirs_count);
+
+    printf("Dumping block bitmap:\n");
+    uint8_t * block_bitmap = malloc(block_size);
+    if (block_bitmap == 0) {
+        EXT2_ERROR("Failed to allocate block bitmap");
+        return 1;
+    }
+    ext2_read_block(partition, bg->bg_block_bitmap, block_bitmap);
+    for (uint32_t i = 0; i < block_size; i++) {
+        printf("%02x ", block_bitmap[i]);
+    }
+    printf("\n");
+
+    printf("Dumping inode bitmap:\n");
+    uint8_t * inode_bitmap = malloc(block_size);
+    if (inode_bitmap == 0) {
+        EXT2_ERROR("Failed to allocate inode bitmap");
+        return 1;
+    }
+    ext2_read_block(partition, bg->bg_inode_bitmap, inode_bitmap);
+    for (uint32_t i = 0; i < block_size; i++) {
+        printf("%02x ", inode_bitmap[i]);
+    }
+    printf("\n");
+
+    free(block_bitmap);
+    free(inode_bitmap);
     return 0;
 }
 

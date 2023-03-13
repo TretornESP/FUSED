@@ -1,10 +1,13 @@
 #include "fused/bfuse.h"
 #include "demofs/ext2.h"
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 
 #define TEST_SKIP 0
 //#define TEST_SIZE 0
+//If the function returns 1 call ext2_stacktrace() to get the error stacktrace and then return 1
+#define CATCH_ERROR(x) if (x == EXT2_RESULT_ERROR) { ext2_stacktrace(); return 1; }
 
 int main(int argc, char *argv[]) {
 
@@ -12,7 +15,7 @@ int main(int argc, char *argv[]) {
     (void)argv;
     
     const char drive[]= "/mnt/hda";
-    
+    ext2_set_debug_base("/mnt/c/Users/85562/FUSED/src/demofs/");
     register_drive("/mnt/c/Users/85562/FUSED/build/img/dummy.img", drive, 512);
     if (ext2_search(drive, 0)) {
         if (ext2_register_partition(drive, 0)) {
@@ -51,30 +54,50 @@ int main(int argc, char *argv[]) {
         ext2_list_directory(partition, "/");
         printf("Listing files done\n");
 
+        char dummy_buffer[] = "Hello world!";
+
         if (partition) {
-            if (ext2_read_file(partition, "/test.input", buffer, file_size, TEST_SKIP)) {
-                if (ext2_create_file(partition, "/test.output")) {
-                    printf("Failed to create file\n");
-                    return 0;
-                }
-                
-                printf("Listing files after creation:\n");
-                ext2_list_directory(partition, "/");
-                printf("Copying file...\n");
-                if (ext2_write_file(partition, "/test.output", buffer, file_size, TEST_SKIP)) {
-                    free(buffer);
-                    buffer = malloc(file_size);
-                    ext2_read_file(partition, "/test.output", buffer, file_size, TEST_SKIP);
-                    FILE * file = fopen("./test/test.output", "wb");
-                    fwrite(buffer, 1, file_size, file);
-                    fclose(file);
-                    printf("File copied\n");
-                } else {
-                    printf("Failed to copy file\n");
-                }
-            } else {
-                printf("Failed to read file\n");
-            }
+            printf("Performing fs operations\n");
+            
+            printf("Reading file /test.input\n");
+            CATCH_ERROR(ext2_read_file(partition, "/test.input", buffer, file_size, TEST_SKIP));
+            
+            printf("Creating file /patata.output\n");
+            CATCH_ERROR(ext2_create_file(partition, "/patata.output", EXT2_FILE_TYPE_REGULAR));
+            
+            printf("Writing file /patata.output\n");
+            CATCH_ERROR(ext2_write_file(partition, "/patata.output", (uint8_t*)dummy_buffer, strlen(dummy_buffer), TEST_SKIP));
+            
+            printf("Creating file /test.output\n");
+            CATCH_ERROR(ext2_create_file(partition, "/test.output", EXT2_FILE_TYPE_REGULAR));
+            
+            printf("Creating directory /stuff\n");
+            CATCH_ERROR(ext2_create_file(partition, "/stuff", EXT2_FILE_TYPE_DIRECTORY));
+
+            printf("Creating file /stuff/test.output\n");
+            CATCH_ERROR(ext2_create_file(partition, "/stuff/test.output", EXT2_FILE_TYPE_REGULAR));
+
+            printf("Deleting file /patata.output\n");
+            CATCH_ERROR(ext2_delete_file(partition, "/patata.output"));
+
+            printf("Writing file /stuff/test.output\n");
+            CATCH_ERROR(ext2_write_file(partition, "/stuff/test.output", buffer, file_size, TEST_SKIP));
+            
+            printf("Performing test\n");
+            free(buffer);
+            buffer = malloc(file_size);
+            
+            CATCH_ERROR(ext2_read_file(partition, "/stuff/test.output", buffer, file_size, TEST_SKIP));
+            FILE * file = fopen("./test/test.output", "wb");
+            fwrite(buffer, 1, file_size, file);
+            fclose(file);
+
+            printf("Final status of fs:\n");
+            ext2_list_directory(partition, "/");
+
+            printf("Deleting directory /stuff\n");
+            CATCH_ERROR(ext2_delete_file(partition, "/stuff"));
+
         }
 
         free(buffer);

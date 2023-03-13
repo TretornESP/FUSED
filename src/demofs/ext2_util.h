@@ -10,5 +10,6 @@
 uint8_t * ext2_buffer_for_size(uint32_t block_size, uint64_t size);
 void epoch_to_date(char* date, uint32_t epoch);
 uint32_t ext2_get_unique_id();
+uint32_t ext2_get_current_epoch();
 uint8_t ext2_path_to_parent_and_name(const char* source, char** path, char** name);
 #endif /* _EXT2_UTIL_H */

@@ -1,10 +1,27 @@
+#pragma GCC diagnostic ignored "-Wvariadic-macros"
 #include "ext2_partition.h"
+#include "ext2_integrity.h"
 
 #include "../fused/primitives.h"
 #include "../fused/auxiliary.h"
 
 #include <stdio.h>
 #include <string.h>
+
+void ext2_dump_partition(struct ext2_partition* partition) {
+    printf("ext2 partition:\n");
+    printf("name: %s\n", partition->name);
+    printf("disk: %s\n", partition->disk);
+    printf("lba: %u\n", partition->lba);
+    printf("group_number: %u\n", partition->group_number);
+    printf("sector_size: %u\n", partition->sector_size);
+    printf("bgdt_block: %u\n", partition->bgdt_block);
+    printf("sb_block: %u\n", partition->sb_block);
+    printf("flush_required: %u\n", partition->flush_required);
+    printf("sb: %p\n", (void*)partition->sb);
+    printf("gd: %p\n", (void*)partition->gd);
+    printf("next: %p\n", (void*)partition->next);
+}
 
 void ext2_disk_from_partition(char * destination, const char * partition) {
     uint32_t partition_name = strlen(partition);
@@ -21,14 +38,14 @@ void ext2_disk_from_partition(char * destination, const char * partition) {
 
 uint8_t ext2_check_status(const char* disk) {
     int status = get_disk_status(disk);
-    printf("[EXT2] Checking disk %s status\n", disk);
+    EXT2_DEBUG("Checking disk %s status", disk);
     if (status != STATUS_READY) {
         if (init_disk(disk) != OP_SUCCESS) {
-            printf("[EXT2] Failed to initialize disk\n");
+            EXT2_WARN("Failed to initialize disk");
             return 0;
         }
         if (get_disk_status(disk) != STATUS_READY) {
-            printf("[EXT2] Disk not ready\n");
+            EXT2_WARN("Disk not ready");
             return 0;
         }
     }

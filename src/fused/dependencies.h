@@ -25,6 +25,7 @@ typedef struct stat __fuse_struct_stat;
 void * __fuse_memcpy(void *dest, const void *src, size_t n);
 u64 __fuse_lseek(int fd, u64 offset, int whence);
 u64 __fuse_read(int fd, void *buf, u64 count);
+u64 __fuse_write(int fd, const void *buf, u64 count);
 int __fuse_printf(const char *format, ...);
 int __fuse_fstat(int fd, struct stat *statbuf);
 int __fuse_close(int fd);

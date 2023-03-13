@@ -91,6 +91,8 @@ struct ext2_inode_descriptor_masix {
     uint8_t i_reserved[10];         /* Reserved */    
 } __attribute__((packed));
 
+void ext2_dump_all_inodes(struct ext2_partition* partition, const char* root_path);
+void ext2_dump_inode(struct ext2_inode_descriptor_generic * inode);
 void ext2_dump_inode_bitmap(struct ext2_partition * partition);
 uint32_t ext2_allocate_inode(struct ext2_partition * partition);
 void ext2_debug_print_file_inode(struct ext2_partition* partition, uint32_t inode_number);
@@ -100,5 +102,6 @@ struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition,
 void ext2_print_inode(struct ext2_inode_descriptor_generic* inode);
 uint32_t ext2_inode_from_path_and_parent(struct ext2_partition* partition, uint32_t parent_inode, const char* path);
 uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path);
-
+uint8_t ext2_delete_inode(struct ext2_partition* partition, uint32_t inode_number);
+uint8_t ext2_delete_file_blocks(struct ext2_partition* partition, uint32_t inode_number);
 #endif

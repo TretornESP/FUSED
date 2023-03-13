@@ -32,6 +32,10 @@ int __fuse_open(const char *pathname, int flags) {
     return open(pathname, flags);
 }
 
+//write to disk
+u64 __fuse_write(int fd, const void *buf, u64 count) {
+    return write(fd, buf, count);
+}
 
 void * __fuse_mmap(void *addr, u64 length, int prot, int flags, int fd, u64 offset) {
     return mmap(addr, length, prot, flags, fd, offset);

@@ -1,3 +1,5 @@
+#pragma GCC diagnostic ignored "-Wvariadic-macros"
+
 #include "ext2.h"
 #include "ext2_util.h"
 
@@ -18,6 +20,11 @@ void epoch_to_date(char* date, uint32_t epoch) {
     time_t t = epoch;
     struct tm *tm = localtime(&t);
     strftime(date, 32, "%Y-%m-%d %H:%M:%S", tm);
+}
+
+uint32_t ext2_get_current_epoch() {
+    time_t t = time(0);
+    return (uint32_t)t;
 }
 
 uint32_t ext2_get_unique_id() {

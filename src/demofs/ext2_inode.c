@@ -1,9 +1,13 @@
+#pragma GCC diagnostic ignored "-Wvariadic-macros"
+
 #include "ext2.h"
 #include "ext2_inode.h"
 #include "ext2_util.h"
 #include "ext2_bg.h"
 #include "ext2_block.h"
 #include "ext2_dentry.h"
+#include "ext2_sb.h"
+#include "ext2_integrity.h"
 
 
 #include "../fused/primitives.h"
@@ -21,7 +25,7 @@ void ext2_dump_inode_bitmap(struct ext2_partition * partition) {
         struct ext2_block_group_descriptor * bgd = (struct ext2_block_group_descriptor *)&partition->gd[i];
         uint8_t * bitmap = (uint8_t*)ext2_buffer_for_size(block_size, block_size);
         if (ext2_read_block(partition, bgd->bg_inode_bitmap, bitmap) <= 0) {
-            printf("[EXT2] Failed to read inode bitmap\n");
+            EXT2_ERROR("Failed to read inode bitmap");
             free(bitmap);
             return;
         }
@@ -44,22 +48,22 @@ uint32_t ext2_allocate_inode(struct ext2_partition * partition) {
 
     int32_t ext2_block_group_id = ext2_operate_on_bg(partition, ext2_bg_has_free_inodes);
     if (ext2_block_group_id == -1) {
-        printf("[EXT2] No block group with free inodes\n");
+        EXT2_WARN("No block group with free inodes");
         return 0;
     }
 
     struct ext2_block_group_descriptor * bgd = (struct ext2_block_group_descriptor *)&partition->gd[ext2_block_group_id];
 
     if (bgd == 0) {
-        printf("[EXT2] No bg with free inodes\n");
+        EXT2_ERROR("No bg with free inodes");
         return 0;
     }
 
-    printf("[EXT2] Found bg with free inodes\n");
+    EXT2_DEBUG("Found bg with free inodes");
 
     uint8_t * inode_bitmap = (uint8_t*)ext2_buffer_for_size(block_size, block_size);
     if (ext2_read_block(partition, bgd->bg_inode_bitmap, inode_bitmap) <= 0) {
-        printf("[EXT2] Failed to read inode bitmap\n");
+        EXT2_ERROR("Failed to read inode bitmap");
         free(inode_bitmap);
         return 0;
     }
@@ -80,17 +84,17 @@ uint32_t ext2_allocate_inode(struct ext2_partition * partition) {
     //0f 00001111
     //2f 00101111
     if (inode_number == 0) {
-        printf("[EXT2] No free inodes\n");
+        EXT2_WARN("No free inodes");
         free(inode_bitmap);
         return 0;
     }
 
-    printf("[EXT2] Found free inode: %d\n", inode_number);
+    EXT2_DEBUG("Found free inode: %d", inode_number);
 
     inode_bitmap[(inode_number-1) / 8] |= 1 << (inode_number-1) % 8;
 
     if (ext2_write_block(partition, bgd->bg_inode_bitmap, inode_bitmap) <= 0) {
-        printf("[EXT2] Failed to write inode bitmap\n");
+        EXT2_ERROR("Failed to write inode bitmap");
         free(inode_bitmap);
         return 0;
     }
@@ -105,7 +109,7 @@ uint32_t ext2_allocate_inode(struct ext2_partition * partition) {
     partition->sb = sb;
     partition->gd[ext2_block_group_id] = *bgd;
 
-    ext2_flush_structures(partition);
+    ext2_flush_required(partition);
     free(inode_bitmap);
 
     return inode_number;
@@ -113,13 +117,13 @@ uint32_t ext2_allocate_inode(struct ext2_partition * partition) {
 
 void ext2_debug_print_file_inode(struct ext2_partition* partition, uint32_t inode_number) {
     if (inode_number == 0) {
-        printf("[EXT2] Failed to get inode number for %d\n", inode_number);
+        EXT2_ERROR("Failed to get inode number for %d", inode_number);
         return;
     }
 
     struct ext2_inode_descriptor * inode = ext2_read_inode(partition, inode_number);
     if (inode == 0) {
-        printf("[EXT2] Failed to read inode %d\n", inode_number);
+        EXT2_ERROR("Failed to read inode %d", inode_number);
     }
 
     ext2_print_inode((struct ext2_inode_descriptor_generic*)inode);
@@ -129,20 +133,20 @@ struct ext2_inode_descriptor * ext2_initialize_inode(struct ext2_partition* part
     struct ext2_inode_descriptor * inode_descriptor = ext2_read_inode(partition, inode_number);
     struct ext2_inode_descriptor_generic * inode = &(inode_descriptor->id);
     if (inode == 0) {
-        printf("[EXT2] Failed to allocate memory for inode\n");
+        EXT2_ERROR("Failed to allocate memory for inode");
         return 0;
     }
 
     uint32_t unique_value = ext2_get_unique_id();
     if (unique_value == 0) {
-        printf("[EXT2] Failed to get unique id\n");
+        EXT2_ERROR("Failed to get unique id");
         return 0;
     }
 
     inode->i_mode = type;
     inode->i_uid = get_uid();   
     inode->i_size = 0;
-    inode->i_atime = get_current_epoch(); 
+    inode->i_atime = ext2_get_current_epoch(); 
     inode->i_ctime = inode->i_atime;
     inode->i_mtime = inode->i_atime;
     inode->i_dtime = 0; 
@@ -162,6 +166,40 @@ struct ext2_inode_descriptor * ext2_initialize_inode(struct ext2_partition* part
     return inode_descriptor;
 }
 
+uint8_t* ext2_read_inode_bitmap(struct ext2_partition* partition, uint32_t inode_number) {
+    struct ext2_superblock * superblock = (struct ext2_superblock*)partition->sb;
+    uint32_t block_size = 1024 << superblock->s_log_block_size;
+    uint32_t inode_group = (inode_number - 1 ) / superblock->s_inodes_per_group;
+    uint32_t sectors_per_block = block_size / partition->sector_size;
+
+    uint32_t inode_bitmap_block = partition->gd[inode_group].bg_inode_bitmap;
+    uint32_t inode_bitmap_lba = (inode_bitmap_block * block_size) / partition->sector_size;
+    uint8_t * inode_bitmap_buffer = malloc(block_size);
+    if (read_disk(partition->disk, inode_bitmap_buffer, partition->lba + inode_bitmap_lba, sectors_per_block)) {
+        EXT2_ERROR("Inode read failed");
+        free(inode_bitmap_buffer);
+        return 0;
+    }
+
+    return inode_bitmap_buffer;
+}
+
+uint8_t ext2_write_inode_bitmap(struct ext2_partition* partition, uint32_t inode_number, uint8_t* inode_bitmap) {
+    struct ext2_superblock * superblock = (struct ext2_superblock*)partition->sb;
+    uint32_t block_size = 1024 << superblock->s_log_block_size;
+    uint32_t inode_group = (inode_number - 1 ) / superblock->s_inodes_per_group;
+    uint32_t sectors_per_block = block_size / partition->sector_size;
+    
+    uint32_t inode_bitmap_block = partition->gd[inode_group].bg_inode_bitmap;
+    uint32_t inode_bitmap_lba = (inode_bitmap_block * block_size) / partition->sector_size;
+    if (write_disk(partition->disk, inode_bitmap, partition->lba + inode_bitmap_lba, sectors_per_block)) {
+        EXT2_ERROR("Inode write failed");
+        return 1;
+    }
+
+    return 0;
+}
+
 uint8_t ext2_write_inode(struct ext2_partition* partition, uint32_t inode_number, struct ext2_inode_descriptor* inode) {
     struct ext2_superblock * superblock = (struct ext2_superblock*)partition->sb;
     struct ext2_superblock_extended * superblock_extended = (struct ext2_superblock_extended*)partition->sb;
@@ -178,7 +216,7 @@ uint8_t ext2_write_inode(struct ext2_partition* partition, uint32_t inode_number
     uint8_t * root_inode_buffer = malloc(block_size);
 
     if (read_disk(partition->disk, root_inode_buffer, partition->lba + inode_table_lba + inode_block*sectors_per_block, sectors_per_block)) {
-        printf("[EXT2] Root inode read failed\n");
+        EXT2_ERROR("Root inode read failed");
         free(root_inode_buffer);
         return 1;
     }
@@ -187,7 +225,7 @@ uint8_t ext2_write_inode(struct ext2_partition* partition, uint32_t inode_number
     memcpy(root_inode_buffer + inode_offset, inode, inode_size);
 
     if (write_disk(partition->disk, root_inode_buffer, partition->lba + inode_table_lba + inode_block*sectors_per_block, sectors_per_block)) {
-        printf("[EXT2] Root inode write failed\n");
+        EXT2_ERROR("Root inode write failed");
         free(root_inode_buffer);
         return 1;
     }
@@ -213,7 +251,7 @@ struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition,
     uint32_t inode_table_lba = (inode_table_block * block_size) / partition->sector_size;
     uint8_t * root_inode_buffer = malloc(block_size);
     if (read_disk(partition->disk, root_inode_buffer, partition->lba + inode_table_lba + inode_block*sectors_per_block, sectors_per_block)) {
-        printf("[EXT2] Root inode read failed\n");
+        EXT2_ERROR("Root inode read failed");
         free(root_inode_buffer);
         return 0;
     }
@@ -297,4 +335,215 @@ uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path)
     }
 
     return inode_index;
+}
+
+uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_number) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+    uint32_t block_number = DIVIDE_ROUNDED_UP(inode->i_size, block_size);
+    uint32_t * block_list = malloc(block_number * 4);
+    
+    uint32_t block_index = 0;
+
+    for (uint32_t i = 0; i < 12; i++) {
+        if (inode->i_block[i] != 0) {
+            block_list[block_index] = inode->i_block[i];
+            block_index++;
+        }
+    }
+
+    if (inode->i_block[12] != 0) {
+        uint32_t * indirect_block_list = malloc(block_size);
+        ext2_read_block(partition, inode->i_block[12], (uint8_t*)indirect_block_list);
+        for (uint32_t i = 0; i < block_size / 4; i++) {
+            if (indirect_block_list[i] != 0) {
+                block_list[block_index] = indirect_block_list[i];
+                block_index++;
+            }
+        }
+        free(indirect_block_list);
+    }
+
+    if (inode->i_block[13] != 0) {
+        uint32_t * double_indirect_block_list = malloc(block_size);
+        ext2_read_block(partition, inode->i_block[13], (uint8_t*)double_indirect_block_list);
+        for (uint32_t i = 0; i < block_size / 4; i++) {
+            if (double_indirect_block_list[i] != 0) {
+                uint32_t * indirect_block_list = malloc(block_size);
+                ext2_read_block(partition, double_indirect_block_list[i], (uint8_t*)indirect_block_list);
+                for (uint32_t j = 0; j < block_size / 4; j++) {
+                    if (indirect_block_list[j] != 0) {
+                        block_list[block_index] = indirect_block_list[j];
+                        block_index++;
+                    }
+                }
+                free(indirect_block_list);
+            }
+        }
+        free(double_indirect_block_list);
+    }
+
+    if (inode->i_block[14] != 0) {
+        uint32_t * triple_indirect_block_list = malloc(block_size);
+        ext2_read_block(partition, inode->i_block[14], (uint8_t*)triple_indirect_block_list);
+        for (uint32_t i = 0; i < block_size / 4; i++) {
+            if (triple_indirect_block_list[i] != 0) {
+                uint32_t * double_indirect_block_list = malloc(block_size);
+                ext2_read_block(partition, triple_indirect_block_list[i], (uint8_t*)double_indirect_block_list);
+                for (uint32_t j = 0; j < block_size / 4; j++) {
+                    if (double_indirect_block_list[j] != 0) {
+                        uint32_t * indirect_block_list = malloc(block_size);
+                        ext2_read_block(partition, double_indirect_block_list[j], (uint8_t*)indirect_block_list);
+                        for (uint32_t k = 0; k < block_size / 4; k++) {
+                            if (indirect_block_list[k] != 0) {
+                                block_list[block_index] = indirect_block_list[k];
+                                block_index++;
+                            }
+                        }
+                        free(indirect_block_list);
+                    }
+                }
+                free(double_indirect_block_list);
+            }
+        }
+        free(triple_indirect_block_list);
+    }
+
+    uint32_t inode_block_count = DIVIDE_ROUNDED_UP(inode->i_size, block_size);
+    if (block_index != inode_block_count) {
+        EXT2_ERROR("Block list size mismatch! Expected %d, got %d", inode_block_count, block_index);
+        free(block_list);
+        return 0;
+    }
+
+    return block_list;
+    
+}
+
+uint8_t ext2_delete_file_blocks(struct ext2_partition* partition, uint32_t inode_number) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+    uint32_t * block_list = ext2_load_block_list(partition, inode_number);
+    uint32_t block_number = DIVIDE_ROUNDED_UP(inode->i_size, block_size);
+    
+    EXT2_DEBUG("Deallocating %d blocks for inode %d", block_number, inode_number);
+    if (block_list == 0) {
+        EXT2_ERROR("Failed to load block list for inode %d", inode_number);
+        return 1;
+    }
+
+    if (ext2_deallocate_blocks(partition, block_list, block_number) != block_number) {
+        EXT2_ERROR("Failed to deallocate blocks for inode %d", inode_number);
+        free(block_list);
+        return 1;
+    }
+
+    free(block_list);
+    return 0;
+}
+
+uint8_t ext2_delete_inode(struct ext2_partition* partition, uint32_t inode_number) {
+    struct ext2_inode_descriptor * full_inode = ext2_read_inode(partition, inode_number);
+    struct ext2_inode_descriptor_generic * inode = &(full_inode->id);
+    
+    struct ext2_superblock * superblock = (struct ext2_superblock*)partition->sb;
+    uint32_t inode_group = (inode_number - 1 ) / superblock->s_inodes_per_group;
+    uint32_t inode_index = (inode_number - 1) % superblock->s_inodes_per_group;
+
+    inode->i_dtime = ext2_get_current_epoch();
+    inode->i_links_count = 0;
+    inode->i_size = 0;
+
+    if (ext2_write_inode(partition, inode_number, full_inode)) {
+        EXT2_ERROR("Failed to delete inode %d", inode_number);
+        return 1;
+    }
+
+    //Delete inode bitmap
+
+    uint8_t * inode_bitmap_buffer = ext2_read_inode_bitmap(partition, inode_number);
+    inode_bitmap_buffer[inode_index] = 0;
+    if (ext2_write_inode_bitmap(partition, inode_number, inode_bitmap_buffer)) {
+        EXT2_ERROR("Failed to delete inode bitmap %d", inode_number);
+        return 1;
+    }
+    free(inode_bitmap_buffer);
+
+    //Update group descriptor
+    partition->gd[inode_group].bg_free_inodes_count++;
+    partition->gd[inode_group].bg_used_dirs_count--;
+
+    //Update superblock
+    superblock->s_free_inodes_count++;
+    
+    ext2_flush_required(partition);
+    return 0;
+}
+
+void ext2_dump_inode(struct ext2_inode_descriptor_generic * inode) {
+    printf("Inode dump:\n");
+    printf("i_mode: %x\n", inode->i_mode);
+    printf("i_uid: %x\n", inode->i_uid);
+    printf("i_size: %x\n", inode->i_size);
+    printf("i_atime: %x\n", inode->i_atime);
+    printf("i_ctime: %x\n", inode->i_ctime);
+    printf("i_mtime: %x\n", inode->i_mtime);
+    printf("i_dtime: %x\n", inode->i_dtime);
+    printf("i_gid: %x\n", inode->i_gid);
+    printf("i_links_count: %x\n", inode->i_links_count);
+    printf("i_sectors: %x\n", inode->i_sectors);
+    printf("i_flags: %x\n", inode->i_flags);
+    printf("i_osd1: %x\n", inode->i_osd1);
+    printf("blocks: see below!\n");
+    printf("i_generation: %x\n", inode->i_generation);
+    printf("i_file_acl: %x\n", inode->i_file_acl);
+    printf("i_dir_acl: %x\n", inode->i_dir_acl);
+    printf("i_faddr: %x\n", inode->i_faddr);
+
+    for (uint32_t i = 0; i < 15; i++) {
+        printf("i_block[%d]: %x", i, inode->i_block[i]);
+    }
+    printf("\n");
+}
+
+uint8_t ext2_dentry_walk_inodes_cb(struct ext2_partition* partition, uint32_t inode_index) {
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
+    if (inode == 0) {
+        EXT2_ERROR("Failed to read inode %d, but we dont care", inode_index);
+        return 0;
+    }
+
+    ext2_dump_inode(inode);
+    return 0;
+}
+
+void ext2_dump_all_inodes(struct ext2_partition* partition, const char* root_path) {
+
+    struct ext2_directory_entry * entries;
+    uint32_t entry_count = ext2_get_all_dirs(partition, root_path, &entries);
+
+    for (uint32_t i = 0; i < entry_count; i++) {
+        struct ext2_directory_entry * entry = &entries[i];
+        if (entry->inode == 0) {
+            continue;
+        }
+
+        printf("Entry %d: %s, inode %d\n", i, entry->name, entry->inode);
+        ext2_dentry_walk_inodes_cb(partition, entry->inode);
+
+        if (entry->file_type == EXT2_DIR_TYPE_DIRECTORY) {
+            if (strcmp(entry->name, ".") == 0 || strcmp(entry->name, "..") == 0) {
+                continue;
+            }
+            
+            char * new_path = malloc(strlen(root_path) + strlen(entry->name) + 2);
+            strcpy(new_path, root_path);
+            strcat(new_path, "/");
+            strcat(new_path, entry->name);
+            ext2_dump_all_inodes(partition, new_path);
+            free(new_path);
+        }
+    }
+    
+    free(entries);
 }

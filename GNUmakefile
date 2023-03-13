@@ -5,7 +5,7 @@ CC := /usr/bin/cc
 LD := /usr/bin/ld
 GDB := gdb
 
-CFLAGS ?= -O2 -g -Wall -Wextra -Wpedantic -pipe -std=c11
+CFLAGS ?= -O2 -g -Wall -Wextra -pipe -std=c11
 GDBFLAGS ?= --nx --command=$(GDBCFG)
 
 DISAS := intel

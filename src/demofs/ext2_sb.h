@@ -96,4 +96,5 @@ struct ext2_superblock_extended {
 } __attribute__((packed));
 
 uint8_t ext2_flush_sb(struct ext2_partition* partition, struct ext2_block_group_descriptor* bg, uint32_t bgid);
+void ext2_dump_sb(struct ext2_partition* partition);
 #endif /* _EXT2_SB_H */
