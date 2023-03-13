@@ -14,6 +14,7 @@
 #include "../fused/auxiliary.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 int64_t ext2_read_block(struct ext2_partition* partition, uint32_t block, uint8_t * destination_buffer) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
@@ -33,11 +34,16 @@ int64_t ext2_read_block(struct ext2_partition* partition, uint32_t block, uint8_
     return 1;
 }
 
-int64_t ext2_read_direct_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t * destination_buffer, uint64_t count) {
+int64_t ext2_read_direct_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t * destination_buffer, uint64_t count, uint64_t * skip_count) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint64_t blocks_read = 0;
 
     for (uint32_t i = 0; i < max; i++) {
+        if (*skip_count > 0) {
+            (*skip_count)--;
+            continue;
+        }
+
         int64_t read_result = ext2_read_block(partition, blocks[i], destination_buffer);
 
         if (read_result == EXT2_READ_FAILED) {
@@ -58,7 +64,7 @@ int64_t ext2_read_direct_blocks(struct ext2_partition* partition, uint32_t * blo
     return blocks_read;
 }
 
-int64_t ext2_read_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *destination_buffer, uint64_t count) {
+int64_t ext2_read_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *destination_buffer, uint64_t count, uint64_t * skip) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint32_t entries_per_block = block_size / 4; //TODO: Abstract for n case
     uint64_t blocks_read = 0;
@@ -73,7 +79,7 @@ int64_t ext2_read_indirect_blocks(struct ext2_partition* partition, uint32_t * b
             return EXT2_READ_FAILED;
         }
 
-        int64_t read_result = ext2_read_direct_blocks(partition, indirect_block, entries_per_block, destination_buffer, count - blocks_read);
+        int64_t read_result = ext2_read_direct_blocks(partition, indirect_block, entries_per_block, destination_buffer, count - blocks_read , skip);
         free(indirect_block);
         if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
 
@@ -88,7 +94,7 @@ int64_t ext2_read_indirect_blocks(struct ext2_partition* partition, uint32_t * b
     return blocks_read;
 }
 
-int64_t ext2_read_double_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *destination_buffer, uint64_t count) {
+int64_t ext2_read_double_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *destination_buffer, uint64_t count, uint64_t * skip) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint32_t entries_per_block = block_size / 4;
     uint32_t blocks_read = 0;
@@ -101,7 +107,7 @@ int64_t ext2_read_double_indirect_blocks(struct ext2_partition* partition, uint3
             free(double_indirect_block);
             return EXT2_READ_FAILED;
         }
-        int64_t read_result = ext2_read_indirect_blocks(partition, double_indirect_block, entries_per_block, destination_buffer, count - blocks_read);
+        int64_t read_result = ext2_read_indirect_blocks(partition, double_indirect_block, entries_per_block, destination_buffer, count - blocks_read, skip);
         free(double_indirect_block);
 
         if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
@@ -118,7 +124,7 @@ int64_t ext2_read_double_indirect_blocks(struct ext2_partition* partition, uint3
     return blocks_read;
 }
 
-int64_t ext2_read_triple_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *destination_buffer, uint64_t count) {
+int64_t ext2_read_triple_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *destination_buffer, uint64_t count, uint64_t* skip) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint32_t entries_per_block = block_size / 4;
     uint32_t blocks_read = 0;
@@ -132,7 +138,7 @@ int64_t ext2_read_triple_indirect_blocks(struct ext2_partition* partition, uint3
             return EXT2_READ_FAILED;
         }
 
-        int64_t read_result = ext2_read_double_indirect_blocks(partition, triple_indirect_block, entries_per_block, destination_buffer, count - blocks_read);
+        int64_t read_result = ext2_read_double_indirect_blocks(partition, triple_indirect_block, entries_per_block, destination_buffer, count - blocks_read, skip);
         free(triple_indirect_block);
 
         if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
@@ -167,11 +173,16 @@ int64_t ext2_write_block(struct ext2_partition* partition, uint32_t block, uint8
     return 1;
 }
 
-int64_t ext2_write_direct_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t * source_buffer, uint64_t count) {
+int64_t ext2_write_direct_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t * source_buffer, uint64_t count, uint64_t * skip) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint64_t blocks_written = 0;
 
     for (uint32_t i = 0; i < max; i++) {
+        if (blocks[i] == 0) EXT2_WARN("Direct block is 0");
+        if (*skip > 0) {
+            *skip -= 1;
+            continue;
+        }
         int64_t write_result = ext2_write_block(partition, blocks[i], source_buffer);
 
         if (write_result == EXT2_WRITE_FAILED) {
@@ -192,7 +203,7 @@ int64_t ext2_write_direct_blocks(struct ext2_partition* partition, uint32_t * bl
     return blocks_written;
 }
 
-int64_t ext2_write_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *source_buffer, uint64_t count) {
+int64_t ext2_write_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *source_buffer, uint64_t count, uint64_t * skip) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint32_t entries_per_block = block_size / 4; //TODO: Abstract for n case
     uint64_t blocks_written = 0;
@@ -207,7 +218,7 @@ int64_t ext2_write_indirect_blocks(struct ext2_partition* partition, uint32_t * 
             return EXT2_WRITE_FAILED;
         }
 
-        int64_t write_result = ext2_write_direct_blocks(partition, indirect_block, entries_per_block, source_buffer, count - blocks_written);
+        int64_t write_result = ext2_write_direct_blocks(partition, indirect_block, entries_per_block, source_buffer, count - blocks_written, skip);
         free(indirect_block);
         if (write_result == EXT2_WRITE_FAILED || write_result == 0) return write_result;
 
@@ -222,7 +233,7 @@ int64_t ext2_write_indirect_blocks(struct ext2_partition* partition, uint32_t * 
     return blocks_written;
 }
 
-int64_t ext2_write_double_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *source_buffer, uint64_t count) {
+int64_t ext2_write_double_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *source_buffer, uint64_t count, uint64_t * skip) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint32_t entries_per_block = block_size / 4;
     uint32_t blocks_written = 0;
@@ -235,7 +246,7 @@ int64_t ext2_write_double_indirect_blocks(struct ext2_partition* partition, uint
             free(double_indirect_block);
             return EXT2_WRITE_FAILED;
         }
-        int64_t write_result = ext2_write_indirect_blocks(partition, double_indirect_block, entries_per_block, source_buffer, count - blocks_written);
+        int64_t write_result = ext2_write_indirect_blocks(partition, double_indirect_block, entries_per_block, source_buffer, count - blocks_written, skip);
         free(double_indirect_block);
 
         if (write_result == EXT2_WRITE_FAILED || write_result == 0) return write_result;
@@ -252,7 +263,7 @@ int64_t ext2_write_double_indirect_blocks(struct ext2_partition* partition, uint
     return blocks_written;
 }
 
-int64_t ext2_write_triple_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *source_buffer, uint64_t count) {
+int64_t ext2_write_triple_indirect_blocks(struct ext2_partition* partition, uint32_t * blocks, uint32_t max, uint8_t *source_buffer, uint64_t count, uint64_t * skip) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint32_t entries_per_block = block_size / 4;
     uint32_t blocks_written = 0;
@@ -266,7 +277,7 @@ int64_t ext2_write_triple_indirect_blocks(struct ext2_partition* partition, uint
             return EXT2_WRITE_FAILED;
         }
 
-        int64_t write_result = ext2_write_double_indirect_blocks(partition, triple_indirect_block, entries_per_block, source_buffer, count - blocks_written);
+        int64_t write_result = ext2_write_double_indirect_blocks(partition, triple_indirect_block, entries_per_block, source_buffer, count - blocks_written, skip);
         free(triple_indirect_block);
 
         if (write_result == EXT2_WRITE_FAILED || write_result == 0) return write_result;
@@ -365,6 +376,7 @@ uint32_t ext2_deallocate_blocks(struct ext2_partition* partition, uint32_t *bloc
 
     free(block_bitmap);
     ext2_flush_required(partition);
+    EXT2_DEBUG("Deallocated %d blocks", blocks_deallocated);
     return blocks_deallocated;
 }
 
@@ -571,7 +583,8 @@ uint8_t ext2_allocate_blocks(struct ext2_partition* partition, struct ext2_inode
     return 1;
 }
 
-int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count) {
+int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count, uint64_t blocks_skip) {
+    if (count == 0) return 0;
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
     if (inode == 0) return EXT2_READ_FAILED;
@@ -579,7 +592,8 @@ int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_
     uint32_t blocks_read = 0;
     int64_t read_result = 0;
     EXT2_DEBUG("First file block: %d", inode->i_block[0]);
-    read_result = ext2_read_direct_blocks(partition, inode->i_block, 12, destination_buffer, count);
+    
+    read_result = ext2_read_direct_blocks(partition, inode->i_block, 12, destination_buffer, count, &blocks_skip);
     if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
     blocks_read += read_result;
     destination_buffer += read_result * block_size;
@@ -587,7 +601,7 @@ int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_
     if (blocks_read >= count) return blocks_read;
 
     EXT2_DEBUG("Reading indirect block");
-    read_result = ext2_read_indirect_blocks(partition, &(inode->i_block[12]), 1, destination_buffer, count - blocks_read);
+    read_result = ext2_read_indirect_blocks(partition, &(inode->i_block[12]), 1, destination_buffer, count - blocks_read, &blocks_skip);
     if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
     blocks_read += read_result;
     destination_buffer += read_result * block_size;
@@ -595,7 +609,7 @@ int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_
     if (blocks_read >= count) return blocks_read;
 
     EXT2_DEBUG("Reading double indirect block");
-    read_result = ext2_read_double_indirect_blocks(partition, &(inode->i_block[13]), 1, destination_buffer, count - blocks_read);
+    read_result = ext2_read_double_indirect_blocks(partition, &(inode->i_block[13]), 1, destination_buffer, count - blocks_read, &blocks_skip);
     if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
     blocks_read += read_result;
     destination_buffer += read_result * block_size;
@@ -603,7 +617,7 @@ int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_
     if (blocks_read >= count) return blocks_read;
 
     EXT2_DEBUG("Reading triple indirect block");
-    read_result = ext2_read_triple_indirect_blocks(partition, &(inode->i_block[14]), 1, destination_buffer, count - blocks_read);
+    read_result = ext2_read_triple_indirect_blocks(partition, &(inode->i_block[14]), 1, destination_buffer, count - blocks_read, &blocks_skip);
     if (read_result == EXT2_READ_FAILED || read_result == 0) return read_result;
     blocks_read += read_result;
     destination_buffer += read_result * block_size;
@@ -614,14 +628,68 @@ int64_t ext2_read_inode_blocks(struct ext2_partition* partition, uint32_t inode_
     return EXT2_READ_FAILED;
 }
 
-int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count) {
-    uint64_t blocks = DIVIDE_ROUNDED_UP(count, 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size));
-    int64_t result = ext2_read_inode_blocks(partition, inode_number, destination_buffer, blocks);
-    if (result == EXT2_READ_FAILED) return EXT2_READ_FAILED;
-    return result * (1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size));
+int64_t ext2_read_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * destination_buffer, uint64_t count, uint64_t skip) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    //struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+    //if (inode == 0) return EXT2_READ_FAILED;
+    //uint32_t file_size = inode->i_size;
+    uint64_t blocks = DIVIDE_ROUNDED_UP(count, block_size);
+    uint64_t excess_bytes = (blocks * block_size) - count;
+    uint64_t skip_blocks = skip / block_size;
+    uint64_t skip_bytes = skip % block_size;
+
+    uint64_t read_bytes = 0;
+    EXT2_DEBUG("reading %ld bytes from ino: %d to %p [skip_blocks: %ld, skip_bytes: %ld, excess_bytes: %ld]", count, inode_number, (void*)destination_buffer, skip_blocks, skip_bytes, excess_bytes);
+
+    if (skip_bytes) {
+        uint8_t * temp_buffer = (uint8_t *)malloc(block_size);
+        int64_t skip_read_result = ext2_read_inode_blocks(partition, inode_number, temp_buffer, 1, skip_blocks);
+        if (skip_read_result != 1) {
+            EXT2_ERROR("Failed to read skip bytes");
+            return EXT2_READ_FAILED;
+        }
+
+        memcpy(destination_buffer, temp_buffer + skip_bytes, block_size - skip_bytes);
+        free(temp_buffer);
+        destination_buffer += block_size - skip_bytes;
+        skip_blocks++;
+        read_bytes += block_size - skip_bytes;
+    }
+
+    int64_t remaining_bytes = count - read_bytes;
+    if (remaining_bytes > 0) {
+        int64_t result = ext2_read_inode_blocks(partition, inode_number, destination_buffer, blocks - 1, skip_blocks);
+        if (result == EXT2_READ_FAILED) return EXT2_READ_FAILED;
+
+        if (result < 0) {
+            EXT2_ERROR("Failed to read file");
+            return EXT2_READ_FAILED;
+        }
+
+        read_bytes += result * block_size;
+        skip_blocks += result;
+        destination_buffer += result * block_size;
+        remaining_bytes = count - read_bytes;
+    }
+
+    if (remaining_bytes > 0) {
+        uint8_t * temp_buffer = (uint8_t *)malloc(block_size);
+        int64_t remaining_read_result = ext2_read_inode_blocks(partition, inode_number, temp_buffer, 1, skip_blocks);
+        if (remaining_read_result != 1) {
+            EXT2_ERROR("Failed to read remaining bytes");
+            return EXT2_READ_FAILED;
+        }
+        memcpy(destination_buffer, temp_buffer, remaining_bytes);
+        free(temp_buffer);
+        read_bytes += remaining_bytes;
+    }
+
+    EXT2_DEBUG("Full read: %ld bytes", read_bytes);
+    return read_bytes;
 }
 
-int64_t ext2_write_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * source_buffer, uint64_t count) {
+int64_t ext2_write_inode_blocks(struct ext2_partition* partition, uint32_t inode_number, uint8_t * source_buffer, uint64_t count, uint64_t blocks_skip) {
+    if (count == 0) return 0;  
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
     if (inode == 0) return EXT2_WRITE_FAILED;
@@ -630,7 +698,7 @@ int64_t ext2_write_inode_blocks(struct ext2_partition* partition, uint32_t inode
     int64_t write_result = 0;
 
     EXT2_DEBUG("Writing basic blocks %d", inode->i_block[0]);
-    write_result = ext2_write_direct_blocks(partition, inode->i_block, 12, source_buffer, count);
+    write_result = ext2_write_direct_blocks(partition, inode->i_block, 12, source_buffer, count, &blocks_skip);
     if (write_result == EXT2_WRITE_FAILED || write_result == 0) return write_result;
     blocks_written += write_result;
     source_buffer += write_result * block_size;
@@ -638,7 +706,7 @@ int64_t ext2_write_inode_blocks(struct ext2_partition* partition, uint32_t inode
     if (blocks_written >= count) return blocks_written;
 
     EXT2_DEBUG("Writing indirect block");
-    write_result = ext2_write_indirect_blocks(partition, &(inode->i_block[12]), 1, source_buffer, count - blocks_written);
+    write_result = ext2_write_indirect_blocks(partition, &(inode->i_block[12]), 1, source_buffer, count - blocks_written, &blocks_skip);
     if (write_result == EXT2_WRITE_FAILED || write_result == 0) return write_result;
     blocks_written += write_result;
     source_buffer += write_result * block_size;
@@ -646,7 +714,7 @@ int64_t ext2_write_inode_blocks(struct ext2_partition* partition, uint32_t inode
     if (blocks_written >= count) return blocks_written;
 
     EXT2_DEBUG("Writing double indirect block");
-    write_result = ext2_write_double_indirect_blocks(partition, &(inode->i_block[13]), 1, source_buffer, count - blocks_written);
+    write_result = ext2_write_double_indirect_blocks(partition, &(inode->i_block[13]), 1, source_buffer, count - blocks_written, &blocks_skip);
     if (write_result == EXT2_WRITE_FAILED || write_result == 0) return write_result;
     blocks_written += write_result;
     source_buffer += write_result * block_size;
@@ -654,7 +722,7 @@ int64_t ext2_write_inode_blocks(struct ext2_partition* partition, uint32_t inode
     if (blocks_written >= count) return blocks_written;
 
     EXT2_DEBUG("Writing triple indirect block");
-    write_result = ext2_write_triple_indirect_blocks(partition, &(inode->i_block[14]), 1, source_buffer, count - blocks_written);
+    write_result = ext2_write_triple_indirect_blocks(partition, &(inode->i_block[14]), 1, source_buffer, count - blocks_written, &blocks_skip);
     if (write_result == EXT2_WRITE_FAILED || write_result == 0) return write_result;
     blocks_written += write_result;
     source_buffer += write_result * block_size;
@@ -665,10 +733,82 @@ int64_t ext2_write_inode_blocks(struct ext2_partition* partition, uint32_t inode
     return EXT2_WRITE_FAILED;
 }
 
-int64_t ext2_write_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * source_buffer, uint64_t count) {
-    uint64_t blocks = DIVIDE_ROUNDED_UP(count, 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size));
-    EXT2_DEBUG("Writing %ld bytes to inode %d (%ld blocks)", count, inode_number, blocks);    
-    int64_t result = ext2_write_inode_blocks(partition, inode_number, source_buffer, blocks);
-    if (result == EXT2_WRITE_FAILED) return EXT2_WRITE_FAILED;
-    return result * (1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size));
+int64_t ext2_write_inode_bytes(struct ext2_partition* partition, uint32_t inode_number, uint8_t * source_buffer, uint64_t count, uint64_t skip) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+    if (inode == 0) return EXT2_WRITE_FAILED;
+    uint32_t inode_size = inode->i_size;
+    uint64_t blocks = DIVIDE_ROUNDED_UP(count, block_size);
+    uint64_t excess_bytes = (blocks * block_size) - count;
+    uint64_t skip_blocks = skip / block_size;
+    uint64_t skip_bytes = skip % block_size;
+
+    uint64_t written_bytes = 0;
+    EXT2_DEBUG("writing %ld bytes to ino: %d from %p [skip_blocks: %ld, skip_bytes: %ld, excess_bytes: %ld]", count, inode_number, (void*)source_buffer, skip_blocks, skip_bytes, excess_bytes);
+
+    if (skip_bytes) {
+        uint8_t * temp_buffer = (uint8_t *)malloc(block_size);
+        int64_t skip_read_result = ext2_read_inode_blocks(partition, inode_number, temp_buffer, 1, skip_blocks);
+        if (skip_read_result != 1) {
+            EXT2_ERROR("Failed to read skip bytes");
+            return EXT2_WRITE_FAILED;
+        }
+
+        if (inode_size < block_size) {
+            memcpy(temp_buffer + skip_bytes, source_buffer, skip_bytes);
+        } else {
+            memcpy(temp_buffer + skip_bytes, source_buffer, skip_bytes);
+        }
+
+        int64_t skip_write_result = ext2_write_inode_blocks(partition, inode_number, temp_buffer, 1, skip_blocks);
+        if (skip_write_result != 1) {
+            EXT2_ERROR("Failed to write skip bytes");
+            return EXT2_WRITE_FAILED;
+        }
+        free(temp_buffer);
+        source_buffer += block_size - skip_bytes;
+        skip_blocks++;
+        written_bytes += block_size - skip_bytes;
+        EXT2_WARN("Partial write of %ld bytes", block_size - skip_bytes);
+    }
+    
+    int64_t remaining_bytes = count - written_bytes;
+
+    if (remaining_bytes > 0) {
+        EXT2_WARN("Writing second stage, remaining bytes: %ld", remaining_bytes);
+        int64_t result = ext2_write_inode_blocks(partition, inode_number, source_buffer, blocks - 1, skip_blocks);
+        if (result == EXT2_WRITE_FAILED) return EXT2_WRITE_FAILED;
+
+        if (result < 0) {
+            EXT2_ERROR("Failed to write file");
+            return EXT2_WRITE_FAILED;
+        }
+
+        written_bytes += result * block_size;
+        skip_blocks += result;
+        EXT2_WARN("Partial write of %ld bytes", result * block_size);
+        remaining_bytes = count - written_bytes;
+    }
+
+    if (remaining_bytes > 0) {
+        EXT2_WARN("Writing third stage, remaining bytes: %ld", remaining_bytes);
+        uint8_t * temp_buffer = (uint8_t *)malloc(block_size);
+        int64_t remaining_read_result = ext2_read_inode_blocks(partition, inode_number, temp_buffer, 1, skip_blocks);
+        if (remaining_read_result != 1) {
+            EXT2_ERROR("Failed to read remaining bytes");
+            return EXT2_WRITE_FAILED;
+        }
+        memcpy(temp_buffer, source_buffer + written_bytes, remaining_bytes);
+        int64_t remaining_write_result = ext2_write_inode_blocks(partition, inode_number, temp_buffer, 1, skip_blocks);
+        if (remaining_write_result != 1) {
+            EXT2_ERROR("Failed to write remaining bytes");
+            return EXT2_WRITE_FAILED;
+        }
+        free(temp_buffer);
+        written_bytes += remaining_bytes;
+        EXT2_WARN("Partial write of %ld bytes", remaining_bytes);
+    }
+    
+    EXT2_WARN("Wrote %ld bytes", written_bytes);
+    return written_bytes;
 }

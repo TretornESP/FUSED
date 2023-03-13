@@ -4,8 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define TEST_SKIP 0
-//#define TEST_SIZE 0
+#define TEST_SKIP 5000
+#define TEST_SIZE 4000
 //If the function returns 1 call ext2_stacktrace() to get the error stacktrace and then return 1
 #define CATCH_ERROR(x) if (x == EXT2_RESULT_ERROR) { ext2_stacktrace(); return 1; }
 
@@ -15,8 +15,8 @@ int main(int argc, char *argv[]) {
     (void)argv;
     
     const char drive[]= "/mnt/hda";
-    ext2_set_debug_base("/mnt/c/Users/xabier.iglesias/fuse/src/demofs/");
-    if (!register_drive("/mnt/c/Users/xabier.iglesias/fuse/build/img/dummy.img", drive, 512)) {
+    ext2_set_debug_base("/mnt/c/Users/85562/FUSED/src/demofs/");
+    if (!register_drive("/mnt/c/Users/85562/FUSED/build/img/dummy.img", drive, 512)) {
         printf("Failed to register drive\n");
         return 1;
     }
@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
             CATCH_ERROR(ext2_create_file(partition, "/patata.output", EXT2_FILE_TYPE_REGULAR, permissions));
             
             printf("Writing file /patata.output, size=%ld\n", strlen(dummy_buffer));
-            CATCH_ERROR(ext2_write_file(partition, "/patata.output", (uint8_t*)dummy_buffer, strlen(dummy_buffer), TEST_SKIP));
+            CATCH_ERROR(ext2_write_file(partition, "/patata.output", (uint8_t*)dummy_buffer, strlen(dummy_buffer), 0));
             
             printf("Creating file /test.output\n");
             CATCH_ERROR(ext2_create_file(partition, "/test.output", EXT2_FILE_TYPE_REGULAR, permissions));
@@ -91,14 +91,29 @@ int main(int argc, char *argv[]) {
             CATCH_ERROR(ext2_delete_file(partition, "/patata.output"));
 
             printf("Writing file /stuff/test.output\n");
-            CATCH_ERROR(ext2_write_file(partition, "/stuff/test.output", buffer, file_size, TEST_SKIP));
-            
+            CATCH_ERROR(ext2_write_file(partition, "/stuff/test.output", buffer, file_size, 0));
+
+            //Secondary test
+            CATCH_ERROR(ext2_create_file(partition, "/stuff/small.output", EXT2_FILE_TYPE_REGULAR, permissions));
+            CATCH_ERROR(ext2_write_file(partition, "/stuff/small.output", (uint8_t*)dummy_buffer, strlen(dummy_buffer), 0));
+            uint64_t small_file_size = ext2_get_file_size(partition, "/stuff/small.output");
+            uint8_t * small_buffer = malloc(small_file_size);
+            memset(small_buffer, 0, small_file_size);
+            CATCH_ERROR(ext2_read_file(partition, "/stuff/small.output", small_buffer, small_file_size, 0));
+            printf("Small file contents before: %s\n", small_buffer);
+            CATCH_ERROR(ext2_write_file(partition, "/stuff/small.output", (uint8_t*)"i", 1, 1));
+            memset(small_buffer, 0, small_file_size);
+            CATCH_ERROR(ext2_read_file(partition, "/stuff/small.output", small_buffer, small_file_size, 0));
+            printf("Small file contents after: %s\n", small_buffer);
+            free(small_buffer);
+
             printf("Performing test\n");
             free(buffer);
             buffer = malloc(file_size);
             
-            CATCH_ERROR(ext2_read_file(partition, "/stuff/test.output", buffer, file_size, TEST_SKIP));
+            CATCH_ERROR(ext2_read_file(partition, "/stuff/test.output", buffer, file_size, 0));
             FILE * file = fopen("./test/test.output", "wb");
+            printf("Writing file ./test/test.output, size=%ld\n", file_size);
             fwrite(buffer, 1, file_size, file);
             fclose(file);
 
@@ -108,8 +123,8 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
 
-            printf("Truncating file /stuff/test.output\n");
-            CATCH_ERROR(ext2_resize_file(partition, ino, 1024));
+            //printf("Truncating file /stuff/test.output\n");
+            //CATCH_ERROR(ext2_resize_file(partition, ino, 1024));
         }
 
         if (ext2_errors())

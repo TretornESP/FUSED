@@ -46,7 +46,7 @@ uint8_t ext2_delete_dentry(struct ext2_partition* partition, const char * path) 
             return 1;
         }
 
-        if (ext2_read_inode_bytes(partition, parent_inode_number, block_buffer, parent_inode->i_size) == EXT2_READ_FAILED) {
+        if (ext2_read_inode_bytes(partition, parent_inode_number, block_buffer, parent_inode->i_size, 0) == EXT2_READ_FAILED) {
             EXT2_ERROR("Failed to read parent directory %s", parent_path);
             return 1;
         }
@@ -76,7 +76,7 @@ uint8_t ext2_delete_dentry(struct ext2_partition* partition, const char * path) 
             parsed_bytes += entry->rec_len;
         }
         if (deleted)
-            if (ext2_write_inode_bytes(partition, parent_inode_number, block_buffer, parent_inode->i_size) == EXT2_WRITE_FAILED) {
+            if (ext2_write_inode_bytes(partition, parent_inode_number, block_buffer, parent_inode->i_size, 0) == EXT2_WRITE_FAILED) {
                 EXT2_ERROR("Failed to write parent directory %s", parent_path);
                 return 1;
             }
@@ -117,7 +117,7 @@ void ext2_list_dentry(struct ext2_partition* partition, const char * path) {
             return;
         }
 
-        if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size) == EXT2_READ_FAILED) {
+        if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size, 0) == EXT2_READ_FAILED) {
             EXT2_ERROR("Failed to read directory %s", path);
             return;
         }
@@ -157,7 +157,7 @@ uint32_t ext2_get_all_dirs(struct ext2_partition* partition, const char* parent_
             return 0;
         }
 
-        if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size) == EXT2_READ_FAILED) {
+        if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size, 0) == EXT2_READ_FAILED) {
             EXT2_ERROR("Failed to read directory %s", parent_path);
             return 0;
         }
@@ -215,7 +215,7 @@ uint8_t ext2_operate_on_dentry(struct ext2_partition* partition, const char* pat
             return 0;
         }
 
-        if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size) == EXT2_READ_FAILED) {
+        if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size, 0) == EXT2_READ_FAILED) {
             EXT2_ERROR("Failed to read directory %s", path);
             return 0;
         }
@@ -282,7 +282,7 @@ uint8_t ext2_initialize_directory(struct ext2_partition* partition, uint32_t ino
         return 1;
     }
 
-    if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size) == EXT2_READ_FAILED) {
+    if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size, 0) == EXT2_READ_FAILED) {
         EXT2_ERROR("Failed to read directory inode");
         free(block_buffer);
         return 1;
@@ -301,7 +301,7 @@ uint8_t ext2_initialize_directory(struct ext2_partition* partition, uint32_t ino
     }
 
 
-    if (ext2_write_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size) == EXT2_WRITE_FAILED) {
+    if (ext2_write_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size, 0) == EXT2_WRITE_FAILED) {
         EXT2_ERROR("Failed to write directory entry");
         free(block_buffer);
         return 1;
@@ -337,7 +337,7 @@ uint8_t ext2_create_directory_entry(struct ext2_partition* partition, uint32_t i
             return 1;
         }
 
-        if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size) == EXT2_READ_FAILED) {
+        if (ext2_read_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size, 0) == EXT2_READ_FAILED) {
             EXT2_ERROR("Failed to read directory inode");
             free(block_buffer);
             return 1;
@@ -388,7 +388,7 @@ uint8_t ext2_create_directory_entry(struct ext2_partition* partition, uint32_t i
             return 1;
         }
 
-        if (ext2_write_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size) == EXT2_WRITE_FAILED) {
+        if (ext2_write_inode_bytes(partition, inode_number, block_buffer, root_inode->i_size, 0) == EXT2_WRITE_FAILED) {
             EXT2_ERROR("Failed to write directory entry");
             free(block_buffer);
             return 1;

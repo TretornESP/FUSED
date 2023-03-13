@@ -312,41 +312,6 @@ uint8_t ext2_create_file(struct ext2_partition * partition, const char* path, ui
     return EXT2_RESULT_OK;
 }
 
-uint8_t ext2_shrink_file(struct ext2_partition* partition, uint32_t inode_index, uint32_t new_size) {
-    EXT2_INFO("Shrinking file %d to %d", inode_index, new_size);
-    struct ext2_inode_descriptor * inode_full = (struct ext2_inode_descriptor*)ext2_read_inode(partition, inode_index);
-    struct ext2_inode_descriptor_generic * inode = &(inode_full->id);
-    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
-    if (!inode) {
-        EXT2_ERROR("Failed to read inode");
-        return EXT2_RESULT_ERROR;
-    }
-
-    if (inode->i_size == new_size) {
-        EXT2_WARN("File is already of the requested size");
-        return EXT2_RESULT_OK;
-    }
-
-    uint32_t blocks_to_remove = (inode->i_size - new_size) / block_size; //We don't need to round up here, because we're removing blocks
-
-    EXT2_DEBUG("Resizing file to %d bytes, deallocating %d blocks", new_size, blocks_to_remove);
-    if (ext2_delete_n_blocks(partition, inode_index, blocks_to_remove)) {
-        EXT2_ERROR("Failed to deallocate blocks");
-        return EXT2_RESULT_ERROR;
-    }
-
-    inode->i_size = new_size;
-    inode->i_sectors = DIVIDE_ROUNDED_UP(new_size, partition->sector_size);
-
-    if (ext2_write_inode(partition, inode_index, inode_full)) {
-        EXT2_ERROR("Failed to write inode");
-        return EXT2_RESULT_ERROR;
-    }
-
-    ext2_flush_partition(partition);
-    return EXT2_RESULT_OK;
-}
-
 uint8_t ext2_resize_file(struct ext2_partition* partition, uint32_t inode_index, uint32_t new_size) {
     EXT2_INFO("Resizing file %d to %d", inode_index, new_size);
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
@@ -362,16 +327,28 @@ uint8_t ext2_resize_file(struct ext2_partition* partition, uint32_t inode_index,
     }
 
     if (inode->i_size > new_size) {
-        return ext2_shrink_file(partition, inode_index, new_size);
-    }
+        uint32_t blocks_to_deallocate = (inode->i_size - new_size) / block_size;
 
-    uint32_t blocks_to_allocate = (new_size - inode->i_size) / block_size;
-    if ((new_size - inode->i_size) % block_size) blocks_to_allocate++;
+        EXT2_DEBUG("Resizing file to %d bytes, deallocating %d blocks", new_size, blocks_to_deallocate);
+        uint32_t * blocks = ext2_load_block_list(partition, inode_index);
+        if (!blocks) {
+            EXT2_ERROR("Failed to load block list");
+            return EXT2_RESULT_ERROR;
+        }
 
-    EXT2_DEBUG("Resizing file to %d bytes, allocating %d blocks", new_size, blocks_to_allocate);
-    if (ext2_allocate_blocks(partition, inode, blocks_to_allocate)) {
-        EXT2_ERROR("Failed to allocate blocks");
-        return EXT2_RESULT_ERROR;
+        if (ext2_deallocate_blocks(partition, blocks, blocks_to_deallocate) != blocks_to_deallocate) {
+            EXT2_ERROR("Failed to deallocate blocks");
+            return EXT2_RESULT_ERROR;
+        }
+    } else {
+        uint32_t blocks_to_allocate = (new_size - inode->i_size) / block_size;
+        if ((new_size - inode->i_size) % block_size) blocks_to_allocate++;
+
+        EXT2_DEBUG("Resizing file to %d bytes, allocating %d blocks", new_size, blocks_to_allocate);
+        if (ext2_allocate_blocks(partition, inode, blocks_to_allocate)) {
+            EXT2_ERROR("Failed to allocate blocks");
+            return EXT2_RESULT_ERROR;
+        }   
     }
 
     inode->i_size = new_size;
@@ -388,9 +365,9 @@ uint8_t ext2_resize_file(struct ext2_partition* partition, uint32_t inode_index,
 
 uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size, uint64_t skip) {
     EXT2_INFO("Reading file %s", path);
-    //TODO: This way of skipping bytes is an aberration!
+
     uint32_t inode_index = ext2_path_to_inode(partition, path);
-    uint32_t block_size = 1024 << ((struct ext2_superblock*)partition->sb)->s_log_block_size;
+
     if (!inode_index) {
         EXT2_WARN("Failed to find inode");
         return EXT2_RESULT_ERROR;
@@ -402,10 +379,13 @@ uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uin
         return EXT2_RESULT_ERROR;
     }
 
-    uint64_t file_size = inode->i_size;
-    uint8_t * full_buffer = ext2_buffer_for_size(block_size, file_size);
+    if ((skip+size) > inode->i_size) {
+        EXT2_WARN("Trying to read past the end of the file[skip=%d, size=%d, file_size=%d]", skip, size, inode->i_size);
+        return EXT2_RESULT_ERROR;
+    }
 
-    int64_t read_bytes = ext2_read_inode_bytes(partition, inode_index, full_buffer, file_size);
+
+    int64_t read_bytes = ext2_read_inode_bytes(partition, inode_index, destination_buffer, size, skip);
     if (read_bytes == EXT2_READ_FAILED) {
         EXT2_ERROR("File read failed");
         return EXT2_RESULT_ERROR;
@@ -416,8 +396,10 @@ uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uin
         return EXT2_RESULT_ERROR;
     }
 
-    memcpy(destination_buffer, full_buffer + skip, size);
-    free(full_buffer);
+    if ((uint64_t)read_bytes != size) {
+        EXT2_ERROR("Read %d bytes, expected %d", read_bytes, size);
+    }
+
     return EXT2_RESULT_OK;
 }
 
@@ -440,11 +422,7 @@ uint32_t ext2_get_inode_index(struct ext2_partition* partition, const char* path
 
 uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, uint8_t * source_buffer, uint64_t size, uint64_t skip) {
     EXT2_INFO("Writing file %s", path);
-    //TODO: Skip
-    if (skip) {
-        EXT2_ERROR("Skipping is not supported yet");
-        return EXT2_RESULT_ERROR;
-    }
+
     uint32_t inode_index = ext2_path_to_inode(partition, path);
     if (!inode_index) {
         EXT2_WARN("File doesn't exist");
@@ -464,7 +442,7 @@ uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, ui
         return EXT2_RESULT_ERROR;
     }
 
-    if (size + skip > inode->i_size) {
+    if ((size + skip) > inode->i_size) {
         EXT2_DEBUG("File %s is too small, resizing", path);
         if (ext2_resize_file(partition, inode_index, size + skip) != EXT2_RESULT_OK) {
             EXT2_ERROR("Failed to resize file");
@@ -472,13 +450,7 @@ uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, ui
         }
     }
 
-    struct ext2_inode_descriptor_generic * inode_after = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
-    if (inode_after->i_size != size + skip) {
-        EXT2_ERROR("File size is not correct");
-        return EXT2_RESULT_ERROR;
-    }
-
-    int64_t write_bytes = ext2_write_inode_bytes(partition, inode_index, source_buffer, size);
+    int64_t write_bytes = ext2_write_inode_bytes(partition, inode_index, source_buffer, size, skip);
     if (write_bytes == EXT2_WRITE_FAILED) {
         EXT2_ERROR("File write failed");
         return EXT2_RESULT_ERROR;
@@ -547,7 +519,7 @@ uint8_t ext2_stacktrace() {
 }
 
 uint8_t ext2_errors() {
-    return ext2_has_errors(EXT2_ERROR_WARN);
+    return ext2_has_errors(EXT2_ERROR_ERROR);
 }
 
 uint16_t ext2_get_file_permissions(struct ext2_partition* partition, const char* path) {

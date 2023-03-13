@@ -26,6 +26,8 @@ OUTFILE := test.output
 TESTEMPTY := 800
 TESTBLK := 1024
 TESTCNT := 700
+TESTSIZE := 4000
+TESTSKIP := 5000
 RAW := raw.img
 DUMMY := dummy.img
 
@@ -100,17 +102,34 @@ compatest2:
 test:
 	@make reset
 	@make
+	@dd skip=$(TESTSKIP) bs=1 count=$(TESTSIZE) if=$(TESTDIR)/$(INFILE) of=$(TESTDIR)/trunc_$(INFILE)
 	@make test2
 test2:
-	$(eval m1 := $(shell md5sum $(TESTDIR)/$(INFILE) | cut -d' ' -f1))
+	$(eval m1 := $(shell md5sum $(TESTDIR)/trunc_$(INFILE) | cut -d' ' -f1))
 	$(eval m2 := $(shell md5sum $(TESTDIR)/$(OUTFILE) | cut -d' ' -f1))
-	@echo "md5sum of $(TESTDIR)/$(INFILE) is $(m1)"
+	@echo "md5sum of $(TESTDIR)/trunc_$(INFILE) is $(m1)"
 	@echo "md5sum of $(TESTDIR)/$(OUTFILE) is $(m2)"
 	@if [ "$(m1)" = "$(m2)" ]; then \
 		echo "Test passed!"; \
 	else \
 		echo "Test failed!"; \
 	fi
+	@rm -f $(TESTDIR)/trunc_$(INFILE)
+
+entermnt:
+	@sudo losetup -f $(IMGDIR)/$(DUMMY)
+	make entermnt2
+
+entermnt2:
+	$(eval LOOP_DEV_PATH := $(shell losetup -a | grep $(DUMMY) | cut -d: -f1))
+	@echo Loop device path: $(LOOP_DEV_PATH)
+	@sudo mount $(LOOP_DEV_PATH) $(MOUNTPOINT)
+
+exitmnt:
+	@sudo umount $(MOUNTPOINT)
+	$(eval LOOP_DEV_PATH := $(shell losetup -a | grep $(DUMMY) | cut -d: -f1))
+	@sudo losetup -d $(LOOP_DEV_PATH)
+
 
 reset:
 	@rm -rf $(TESTDIR)

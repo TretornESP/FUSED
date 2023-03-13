@@ -359,7 +359,7 @@ uint32_t ext2_inode_from_path_and_parent(struct ext2_partition* partition, uint3
             return 1;
         }
 
-        if (ext2_read_inode_bytes(partition, parent_inode, block_buffer, root_inode->i_size) == EXT2_READ_FAILED) {
+        if (ext2_read_inode_bytes(partition, parent_inode, block_buffer, root_inode->i_size, 0) == EXT2_READ_FAILED) {
             EXT2_ERROR("Failed to read root inode");
             free(root_inode);
             free(block_buffer);
@@ -405,8 +405,105 @@ uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path)
     return inode_index;
 }
 
+uint32_t ext2_load_indirect_block_list(struct ext2_partition* partition, uint32_t * block_buffer, uint32_t block) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    uint32_t * indirect_block = malloc(block_size);
+    if (indirect_block == 0) {
+        EXT2_ERROR("Failed to allocate memory for indirect block");
+        return EXT2_READ_FAILED;
+    }
+
+    if (ext2_read_block(partition, block, (uint8_t*)indirect_block) == EXT2_READ_FAILED) {
+        EXT2_ERROR("Failed to read indirect block");
+        free(indirect_block);
+        return EXT2_READ_FAILED;
+    }
+
+    uint32_t blocks_read = 0;
+    for (uint32_t i = 0; i < block_size / 4; i++) {
+        if (indirect_block[i] == 0 || indirect_block[i] == INODE_BLOCK_END) {
+            break;
+        }
+
+        block_buffer[blocks_read] = indirect_block[i];
+        blocks_read++;
+    }
+
+    free(indirect_block);
+    return blocks_read;
+}
+
+uint32_t ext2_load_double_indirect_block_list(struct ext2_partition* partition, uint32_t * block_buffer, uint32_t block) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    uint32_t * indirect_block = malloc(block_size);
+    if (indirect_block == 0) {
+        EXT2_ERROR("Failed to allocate memory for indirect block");
+        return EXT2_READ_FAILED;
+    }
+
+    if (ext2_read_block(partition, block, (uint8_t*)indirect_block) == EXT2_READ_FAILED) {
+        EXT2_ERROR("Failed to read indirect block");
+        free(indirect_block);
+        return EXT2_READ_FAILED;
+    }
+
+    uint32_t blocks_read = 0;
+    for (uint32_t i = 0; i < block_size / 4; i++) {
+        if (indirect_block[i] == 0 || indirect_block[i] == INODE_BLOCK_END) {
+            break;
+        }
+
+        uint32_t read = ext2_load_indirect_block_list(partition, block_buffer + blocks_read, indirect_block[i]);
+        if (read == EXT2_READ_FAILED) {
+            EXT2_ERROR("Failed to read indirect block");
+            free(indirect_block);
+            return EXT2_READ_FAILED;
+        }
+
+        blocks_read += read;
+    }
+
+    free(indirect_block);
+    return blocks_read;
+}
+
+uint32_t ext2_load_triple_indirect_block_list(struct ext2_partition* partition, uint32_t * block_buffer, uint32_t block) {
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    uint32_t * indirect_block = malloc(block_size);
+    if (indirect_block == 0) {
+        EXT2_ERROR("Failed to allocate memory for indirect block");
+        return EXT2_READ_FAILED;
+    }
+
+    if (ext2_read_block(partition, block, (uint8_t*)indirect_block) == EXT2_READ_FAILED) {
+        EXT2_ERROR("Failed to read indirect block");
+        free(indirect_block);
+        return EXT2_READ_FAILED;
+    }
+
+    uint32_t blocks_read = 0;
+    for (uint32_t i = 0; i < block_size / 4; i++) {
+        if (indirect_block[i] == 0 || indirect_block[i] == INODE_BLOCK_END) {
+            break;
+        }
+
+        uint32_t read = ext2_load_double_indirect_block_list(partition, block_buffer + blocks_read, indirect_block[i]);
+        if (read == EXT2_READ_FAILED) {
+            EXT2_ERROR("Failed to read indirect block");
+            free(indirect_block);
+            return EXT2_READ_FAILED;
+        }
+
+        blocks_read += read;
+    }
+
+    free(indirect_block);
+    return blocks_read;
+}
+
 uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_number) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
     if (inode == 0) {
         EXT2_WARN("Failed to read root inode");
@@ -414,155 +511,64 @@ uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_
     }
     
     uint32_t block_number = DIVIDE_ROUNDED_UP(inode->i_size, block_size);
+
     uint32_t * block_list = malloc(block_number * 4);
     if (block_list == 0) {
         EXT2_ERROR("Failed to allocate memory for block list");
-        free(inode);
         return 0;
     }
 
     uint32_t block_index = 0;
-
+    
     for (uint32_t i = 0; i < 12; i++) {
+        if (block_index >= block_number) {
+            break;
+        }
+
         if (inode->i_block[i] > 0) {
             block_list[block_index] = inode->i_block[i];
             block_index++;
         }
     }
 
-    if (inode->i_block[12] > 0) {
-        uint32_t * indirect_block_list = malloc(block_size);
-        if (indirect_block_list == 0) {
-            EXT2_ERROR("Failed to allocate memory for indirect block list");
-            goto abort;
+    if (block_index < block_number) {
+        EXT2_DEBUG("Reading indirect block list");
+        uint32_t read = ext2_load_indirect_block_list(partition, block_list + block_index, inode->i_block[12]);
+        if (read == EXT2_READ_FAILED) {
+            EXT2_ERROR("Failed to read indirect block");
+            free(block_list);
+            return 0;
         }
 
-        if (ext2_read_block(partition, inode->i_block[12], (uint8_t*)indirect_block_list) != 1) {
-            free(indirect_block_list);
-            EXT2_ERROR("Failed to read indirect block list");
-            goto abort;
-        }
-
-        for (uint32_t i = 0; i < block_size / 4; i++) {
-            if (indirect_block_list[i] > 0) {
-                block_list[block_index] = indirect_block_list[i];
-                block_index++;
-            }
-        }
-        free(indirect_block_list);
+        block_index += read;
     }
 
-
-    if (inode->i_block[13] > 0) {
-
-        uint32_t * double_indirect_block_list = malloc(block_size);
-        if (double_indirect_block_list == 0) {
-            EXT2_ERROR("Failed to allocate memory for double indirect block list");
-            goto abort;
+    if (block_index < block_number) {
+        EXT2_DEBUG("[%d/%d] Reading double indirect block list", block_index, block_number);
+        uint32_t read = ext2_load_double_indirect_block_list(partition, block_list + block_index, inode->i_block[13]);
+        if (read == EXT2_READ_FAILED) {
+            EXT2_ERROR("Failed to read indirect block");
+            free(block_list);
+            return 0;
         }
 
-        if (ext2_read_block(partition, inode->i_block[13], (uint8_t*)double_indirect_block_list) != 1) {
-            EXT2_ERROR("Failed to read double indirect block list");
-            free(double_indirect_block_list);
-            goto abort;
-        }
-
-        for (uint32_t i = 0; i < block_size / 4; i++) {
-            if (double_indirect_block_list[i] > 0) {
-                uint32_t * indirect_block_list = malloc(block_size);
-                if (indirect_block_list == 0) {
-                    EXT2_ERROR("Failed to allocate memory for indirect block list");
-                    free(double_indirect_block_list);
-                    goto abort;
-                }
-                printf("ENTRO\n");
-                
-                if (ext2_read_block(partition, double_indirect_block_list[i], (uint8_t*)indirect_block_list) != 1) {
-                    EXT2_ERROR("Failed to read indirect block list on index: %d, value: %d", i, double_indirect_block_list[i]);
-                    free(double_indirect_block_list);
-                    free(indirect_block_list);
-                    goto abort;
-                }
-                printf("SALGO\n");
-
-                for (uint32_t j = 0; j < block_size / 4; j++) {
-                    if (indirect_block_list[j] > 0) {
-                        block_list[block_index] = indirect_block_list[j];
-                        block_index++;
-                    }
-                }
-                free(indirect_block_list);
-            }
-        }
-        free(double_indirect_block_list);
-
+        block_index += read;
     }
 
-    if (inode->i_block[14] > 0) {
-        uint32_t * triple_indirect_block_list = malloc(block_size);
-        if (triple_indirect_block_list == 0) {
-            EXT2_ERROR("Failed to allocate memory for triple indirect block list");
-            goto abort;
+    if (block_index < block_number) {
+        EXT2_DEBUG("Reading triple block list");
+        uint32_t read = ext2_load_triple_indirect_block_list(partition, block_list + block_index, inode->i_block[14]);
+        if (read == EXT2_READ_FAILED) {
+            EXT2_ERROR("Failed to read indirect block");
+            free(block_list);
+            return 0;
         }
 
-        if (ext2_read_block(partition, inode->i_block[14], (uint8_t*)triple_indirect_block_list) != 1) {
-            EXT2_ERROR("Failed to read triple indirect block list");
-            free(triple_indirect_block_list);
-            goto abort;
-        }
-
-        for (uint32_t i = 0; i < block_size / 4; i++) {
-            if (triple_indirect_block_list[i] > 0) {
-                uint32_t * double_indirect_block_list = malloc(block_size);
-                if (double_indirect_block_list == 0) {
-                    EXT2_ERROR("Failed to allocate memory for double indirect block list");
-                    free(triple_indirect_block_list);
-                    goto abort;
-                }
-
-                if (ext2_read_block(partition, triple_indirect_block_list[i], (uint8_t*)double_indirect_block_list) != 1) {
-                    EXT2_ERROR("Failed to read double indirect block list");
-                    free(triple_indirect_block_list);
-                    free(double_indirect_block_list);
-                    goto abort;
-                }
-
-                for (uint32_t j = 0; j < block_size / 4; j++) {
-                    if (double_indirect_block_list[j] > 0) {
-                        uint32_t * indirect_block_list = malloc(block_size);
-                        if (indirect_block_list == 0) {
-                            EXT2_ERROR("Failed to allocate memory for indirect block list");
-                            free(triple_indirect_block_list);
-                            free(double_indirect_block_list);
-                            goto abort;
-                        }
-
-                        if (ext2_read_block(partition, double_indirect_block_list[j], (uint8_t*)indirect_block_list) != 1) {
-                            EXT2_ERROR("Failed to read indirect block list");
-                            free(triple_indirect_block_list);
-                            free(double_indirect_block_list);
-                            free(indirect_block_list);
-                            goto abort;
-                        }
-
-                        for (uint32_t k = 0; k < block_size / 4; k++) {
-                            if (indirect_block_list[k] > 0) {
-                                block_list[block_index] = indirect_block_list[k];
-                                block_index++;
-                            }
-                        }
-                        free(indirect_block_list);
-                    }
-                }
-                free(double_indirect_block_list);
-            }
-        }
-        free(triple_indirect_block_list);
+        block_index += read;
     }
 
-    uint32_t inode_block_count = DIVIDE_ROUNDED_UP(inode->i_size, block_size);
-    if (block_index != inode_block_count) {
-        EXT2_ERROR("Block list size mismatch! Expected %d, got %d", inode_block_count, block_index);
+    if (block_index != block_number) {
+        EXT2_ERROR("Block list size mismatch! Expected %d, got %d", block_number, block_index);
         free(block_list);
         return 0;
     } else {
@@ -571,10 +577,6 @@ uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_
 
     return block_list;
 
-abort:
-    if (inode) free(inode);
-    if (block_list) free(block_list);
-    return 0;
 }
 
 uint8_t ext2_delete_file_blocks(struct ext2_partition* partition, uint32_t inode_number) {

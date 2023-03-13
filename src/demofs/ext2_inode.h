@@ -39,6 +39,9 @@
 #define INODE_FLAG_AFS_DIR       0x00020000
 #define INODE_FLAG_JOURNAL_DATA  0x00040000
 
+//Hack?
+#define INODE_BLOCK_END          0xFFFFFFFF
+
 struct ext2_inode_descriptor_generic {
     uint16_t i_mode;                /* File mode */
     uint16_t i_uid;                 /* Low 16 bits of Owner Uid */
@@ -95,6 +98,7 @@ void ext2_dump_all_inodes(struct ext2_partition* partition, const char* root_pat
 void ext2_dump_inode(struct ext2_inode_descriptor_generic * inode);
 void ext2_dump_inode_bitmap(struct ext2_partition * partition);
 uint32_t ext2_allocate_inode(struct ext2_partition * partition);
+uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_number);
 void ext2_debug_print_file_inode(struct ext2_partition* partition, uint32_t inode_number);
 uint8_t ext2_delete_n_blocks(struct ext2_partition* partition, uint32_t inode_number, uint32_t blocks_to_remove);
 struct ext2_inode_descriptor * ext2_initialize_inode(struct ext2_partition* partition, uint32_t inode_number, uint32_t type, uint32_t permissions);
