@@ -24,7 +24,12 @@ void ext2_dump_inode_bitmap(struct ext2_partition * partition) {
     for (uint32_t i = 0; i < block_group_count; i++) {
         struct ext2_block_group_descriptor * bgd = (struct ext2_block_group_descriptor *)&partition->gd[i];
         uint8_t * bitmap = (uint8_t*)ext2_buffer_for_size(block_size, block_size);
-        if (ext2_read_block(partition, bgd->bg_inode_bitmap, bitmap) <= 0) {
+        if (bitmap == 0) {
+            EXT2_ERROR("Failed to allocate memory for inode bitmap");
+            return;
+        }
+
+        if (ext2_read_block(partition, bgd->bg_inode_bitmap, bitmap) != 1) {
             EXT2_ERROR("Failed to read inode bitmap");
             free(bitmap);
             return;
@@ -62,7 +67,12 @@ uint32_t ext2_allocate_inode(struct ext2_partition * partition) {
     EXT2_DEBUG("Found bg with free inodes");
 
     uint8_t * inode_bitmap = (uint8_t*)ext2_buffer_for_size(block_size, block_size);
-    if (ext2_read_block(partition, bgd->bg_inode_bitmap, inode_bitmap) <= 0) {
+    if (inode_bitmap == 0) {
+        EXT2_ERROR("Failed to allocate memory for inode bitmap");
+        return 0;
+    }
+
+    if (ext2_read_block(partition, bgd->bg_inode_bitmap, inode_bitmap) != 1) {
         EXT2_ERROR("Failed to read inode bitmap");
         free(inode_bitmap);
         return 0;
@@ -129,8 +139,13 @@ void ext2_debug_print_file_inode(struct ext2_partition* partition, uint32_t inod
     ext2_print_inode((struct ext2_inode_descriptor_generic*)inode);
 }
 
-struct ext2_inode_descriptor * ext2_initialize_inode(struct ext2_partition* partition, uint32_t inode_number, uint32_t type) {
+struct ext2_inode_descriptor * ext2_initialize_inode(struct ext2_partition* partition, uint32_t inode_number, uint32_t type, uint32_t permissions) {
     struct ext2_inode_descriptor * inode_descriptor = ext2_read_inode(partition, inode_number);
+    if (inode_descriptor == 0) {
+        EXT2_ERROR("Failed to read inode %d", inode_number);
+        return 0;
+    }
+
     struct ext2_inode_descriptor_generic * inode = &(inode_descriptor->id);
     if (inode == 0) {
         EXT2_ERROR("Failed to allocate memory for inode");
@@ -143,7 +158,7 @@ struct ext2_inode_descriptor * ext2_initialize_inode(struct ext2_partition* part
         return 0;
     }
 
-    inode->i_mode = type;
+    inode->i_mode = type | permissions;
     inode->i_uid = get_uid();   
     inode->i_size = 0;
     inode->i_atime = ext2_get_current_epoch(); 
@@ -156,7 +171,10 @@ struct ext2_inode_descriptor * ext2_initialize_inode(struct ext2_partition* part
     inode->i_flags = 0;
     inode->i_osd1 = 0;    
     
-    memset(inode->i_block, 0, sizeof(uint32_t) * 15);
+    if (memset(inode->i_block, 0, sizeof(uint32_t) * 15) == 0) {
+        EXT2_ERROR("Failed to initialize inode block");
+        return 0;
+    }
 
     inode->i_generation = unique_value;
     inode->i_file_acl = 0;
@@ -175,6 +193,11 @@ uint8_t* ext2_read_inode_bitmap(struct ext2_partition* partition, uint32_t inode
     uint32_t inode_bitmap_block = partition->gd[inode_group].bg_inode_bitmap;
     uint32_t inode_bitmap_lba = (inode_bitmap_block * block_size) / partition->sector_size;
     uint8_t * inode_bitmap_buffer = malloc(block_size);
+    if (inode_bitmap_buffer == 0) {
+        EXT2_ERROR("Failed to allocate memory for inode bitmap");
+        return 0;
+    }
+
     if (read_disk(partition->disk, inode_bitmap_buffer, partition->lba + inode_bitmap_lba, sectors_per_block)) {
         EXT2_ERROR("Inode read failed");
         free(inode_bitmap_buffer);
@@ -214,6 +237,10 @@ uint8_t ext2_write_inode(struct ext2_partition* partition, uint32_t inode_number
     uint32_t inode_table_block = partition->gd[inode_group].bg_inode_table;
     uint32_t inode_table_lba = (inode_table_block * block_size) / partition->sector_size;
     uint8_t * root_inode_buffer = malloc(block_size);
+    if (root_inode_buffer == 0) {
+        EXT2_ERROR("Failed to allocate memory for root inode");
+        return 1;
+    }
 
     if (read_disk(partition->disk, root_inode_buffer, partition->lba + inode_table_lba + inode_block*sectors_per_block, sectors_per_block)) {
         EXT2_ERROR("Root inode read failed");
@@ -222,7 +249,11 @@ uint8_t ext2_write_inode(struct ext2_partition* partition, uint32_t inode_number
     }
 
     uint32_t inode_offset = (inode_index * inode_size) % block_size;
-    memcpy(root_inode_buffer + inode_offset, inode, inode_size);
+    if (memcpy(root_inode_buffer + inode_offset, inode, inode_size) == 0) {
+        EXT2_ERROR("Failed to copy root inode");
+        free(root_inode_buffer);
+        return 1;
+    }
 
     if (write_disk(partition->disk, root_inode_buffer, partition->lba + inode_table_lba + inode_block*sectors_per_block, sectors_per_block)) {
         EXT2_ERROR("Root inode write failed");
@@ -250,6 +281,11 @@ struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition,
     uint32_t inode_table_block = partition->gd[inode_group].bg_inode_table;
     uint32_t inode_table_lba = (inode_table_block * block_size) / partition->sector_size;
     uint8_t * root_inode_buffer = malloc(block_size);
+    if (root_inode_buffer == 0) {
+        EXT2_ERROR("Failed to allocate memory for root inode");
+        return 0;
+    }
+
     if (read_disk(partition->disk, root_inode_buffer, partition->lba + inode_table_lba + inode_block*sectors_per_block, sectors_per_block)) {
         EXT2_ERROR("Root inode read failed");
         free(root_inode_buffer);
@@ -257,8 +293,18 @@ struct ext2_inode_descriptor * ext2_read_inode(struct ext2_partition* partition,
     }
 
     struct ext2_inode_descriptor * inode = malloc(inode_size);
+    if (inode == 0) {
+        EXT2_ERROR("Failed to allocate memory for root inode");
+        free(root_inode_buffer);
+        return 0;
+    }
 
-    memcpy(inode, root_inode_buffer + (((inode_index * inode_size) % block_size)), inode_size);
+    if (memcpy(inode, root_inode_buffer + (((inode_index * inode_size) % block_size)), inode_size) == 0) {
+        EXT2_ERROR("Failed to copy root inode");
+        free(root_inode_buffer);
+        free(inode);
+        return 0;
+    }
 
     free(root_inode_buffer);
 
@@ -300,9 +346,26 @@ void ext2_print_inode(struct ext2_inode_descriptor_generic* inode) {
 uint32_t ext2_inode_from_path_and_parent(struct ext2_partition* partition, uint32_t parent_inode, const char* path) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     struct ext2_inode_descriptor_generic * root_inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, parent_inode);
+    if (root_inode == 0) {
+        EXT2_WARN("Failed to read root inode");
+        return 1;
+    }
+
     if (root_inode->i_mode & INODE_TYPE_DIR) {
         uint8_t *block_buffer = malloc(root_inode->i_size + block_size);
-        ext2_read_inode_bytes(partition, parent_inode, block_buffer, root_inode->i_size);
+        if (block_buffer == 0) {
+            EXT2_ERROR("Failed to allocate memory for block buffer");
+            free(root_inode);
+            return 1;
+        }
+
+        if (ext2_read_inode_bytes(partition, parent_inode, block_buffer, root_inode->i_size) == EXT2_READ_FAILED) {
+            EXT2_ERROR("Failed to read root inode");
+            free(root_inode);
+            free(block_buffer);
+            return 1;
+        }
+
         uint32_t parsed_bytes = 0;
 
         while (parsed_bytes < root_inode->i_size) {
@@ -321,6 +384,11 @@ uint32_t ext2_inode_from_path_and_parent(struct ext2_partition* partition, uint3
 
 uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path) {
     char * path_copy = malloc(strlen(path) + 1);
+    if (path_copy == 0) {
+        EXT2_ERROR("Failed to allocate memory for path copy");
+        return 0;
+    }
+
     strcpy(path_copy, path);
     char * token = strtok(path_copy, "/");
     uint32_t inode_index = EXT2_ROOT_INO_INDEX;
@@ -340,23 +408,43 @@ uint32_t ext2_path_to_inode(struct ext2_partition* partition, const char * path)
 uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_number) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+    if (inode == 0) {
+        EXT2_WARN("Failed to read root inode");
+        return 0;
+    }
+    
     uint32_t block_number = DIVIDE_ROUNDED_UP(inode->i_size, block_size);
     uint32_t * block_list = malloc(block_number * 4);
-    
+    if (block_list == 0) {
+        EXT2_ERROR("Failed to allocate memory for block list");
+        free(inode);
+        return 0;
+    }
+
     uint32_t block_index = 0;
 
     for (uint32_t i = 0; i < 12; i++) {
-        if (inode->i_block[i] != 0) {
+        if (inode->i_block[i] > 0) {
             block_list[block_index] = inode->i_block[i];
             block_index++;
         }
     }
 
-    if (inode->i_block[12] != 0) {
+    if (inode->i_block[12] > 0) {
         uint32_t * indirect_block_list = malloc(block_size);
-        ext2_read_block(partition, inode->i_block[12], (uint8_t*)indirect_block_list);
+        if (indirect_block_list == 0) {
+            EXT2_ERROR("Failed to allocate memory for indirect block list");
+            goto abort;
+        }
+
+        if (ext2_read_block(partition, inode->i_block[12], (uint8_t*)indirect_block_list) != 1) {
+            free(indirect_block_list);
+            EXT2_ERROR("Failed to read indirect block list");
+            goto abort;
+        }
+
         for (uint32_t i = 0; i < block_size / 4; i++) {
-            if (indirect_block_list[i] != 0) {
+            if (indirect_block_list[i] > 0) {
                 block_list[block_index] = indirect_block_list[i];
                 block_index++;
             }
@@ -364,15 +452,41 @@ uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_
         free(indirect_block_list);
     }
 
-    if (inode->i_block[13] != 0) {
+
+    if (inode->i_block[13] > 0) {
+
         uint32_t * double_indirect_block_list = malloc(block_size);
-        ext2_read_block(partition, inode->i_block[13], (uint8_t*)double_indirect_block_list);
+        if (double_indirect_block_list == 0) {
+            EXT2_ERROR("Failed to allocate memory for double indirect block list");
+            goto abort;
+        }
+
+        if (ext2_read_block(partition, inode->i_block[13], (uint8_t*)double_indirect_block_list) != 1) {
+            EXT2_ERROR("Failed to read double indirect block list");
+            free(double_indirect_block_list);
+            goto abort;
+        }
+
         for (uint32_t i = 0; i < block_size / 4; i++) {
-            if (double_indirect_block_list[i] != 0) {
+            if (double_indirect_block_list[i] > 0) {
                 uint32_t * indirect_block_list = malloc(block_size);
-                ext2_read_block(partition, double_indirect_block_list[i], (uint8_t*)indirect_block_list);
+                if (indirect_block_list == 0) {
+                    EXT2_ERROR("Failed to allocate memory for indirect block list");
+                    free(double_indirect_block_list);
+                    goto abort;
+                }
+                printf("ENTRO\n");
+                
+                if (ext2_read_block(partition, double_indirect_block_list[i], (uint8_t*)indirect_block_list) != 1) {
+                    EXT2_ERROR("Failed to read indirect block list on index: %d, value: %d", i, double_indirect_block_list[i]);
+                    free(double_indirect_block_list);
+                    free(indirect_block_list);
+                    goto abort;
+                }
+                printf("SALGO\n");
+
                 for (uint32_t j = 0; j < block_size / 4; j++) {
-                    if (indirect_block_list[j] != 0) {
+                    if (indirect_block_list[j] > 0) {
                         block_list[block_index] = indirect_block_list[j];
                         block_index++;
                     }
@@ -381,21 +495,58 @@ uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_
             }
         }
         free(double_indirect_block_list);
+
     }
 
-    if (inode->i_block[14] != 0) {
+    if (inode->i_block[14] > 0) {
         uint32_t * triple_indirect_block_list = malloc(block_size);
-        ext2_read_block(partition, inode->i_block[14], (uint8_t*)triple_indirect_block_list);
+        if (triple_indirect_block_list == 0) {
+            EXT2_ERROR("Failed to allocate memory for triple indirect block list");
+            goto abort;
+        }
+
+        if (ext2_read_block(partition, inode->i_block[14], (uint8_t*)triple_indirect_block_list) != 1) {
+            EXT2_ERROR("Failed to read triple indirect block list");
+            free(triple_indirect_block_list);
+            goto abort;
+        }
+
         for (uint32_t i = 0; i < block_size / 4; i++) {
-            if (triple_indirect_block_list[i] != 0) {
+            if (triple_indirect_block_list[i] > 0) {
                 uint32_t * double_indirect_block_list = malloc(block_size);
-                ext2_read_block(partition, triple_indirect_block_list[i], (uint8_t*)double_indirect_block_list);
+                if (double_indirect_block_list == 0) {
+                    EXT2_ERROR("Failed to allocate memory for double indirect block list");
+                    free(triple_indirect_block_list);
+                    goto abort;
+                }
+
+                if (ext2_read_block(partition, triple_indirect_block_list[i], (uint8_t*)double_indirect_block_list) != 1) {
+                    EXT2_ERROR("Failed to read double indirect block list");
+                    free(triple_indirect_block_list);
+                    free(double_indirect_block_list);
+                    goto abort;
+                }
+
                 for (uint32_t j = 0; j < block_size / 4; j++) {
-                    if (double_indirect_block_list[j] != 0) {
+                    if (double_indirect_block_list[j] > 0) {
                         uint32_t * indirect_block_list = malloc(block_size);
-                        ext2_read_block(partition, double_indirect_block_list[j], (uint8_t*)indirect_block_list);
+                        if (indirect_block_list == 0) {
+                            EXT2_ERROR("Failed to allocate memory for indirect block list");
+                            free(triple_indirect_block_list);
+                            free(double_indirect_block_list);
+                            goto abort;
+                        }
+
+                        if (ext2_read_block(partition, double_indirect_block_list[j], (uint8_t*)indirect_block_list) != 1) {
+                            EXT2_ERROR("Failed to read indirect block list");
+                            free(triple_indirect_block_list);
+                            free(double_indirect_block_list);
+                            free(indirect_block_list);
+                            goto abort;
+                        }
+
                         for (uint32_t k = 0; k < block_size / 4; k++) {
-                            if (indirect_block_list[k] != 0) {
+                            if (indirect_block_list[k] > 0) {
                                 block_list[block_index] = indirect_block_list[k];
                                 block_index++;
                             }
@@ -414,23 +565,35 @@ uint32_t* ext2_load_block_list(struct ext2_partition* partition, uint32_t inode_
         EXT2_ERROR("Block list size mismatch! Expected %d, got %d", inode_block_count, block_index);
         free(block_list);
         return 0;
+    } else {
+        EXT2_DEBUG("Block list size matches inode size");
     }
 
     return block_list;
-    
+
+abort:
+    if (inode) free(inode);
+    if (block_list) free(block_list);
+    return 0;
 }
 
 uint8_t ext2_delete_file_blocks(struct ext2_partition* partition, uint32_t inode_number) {
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+    if (inode == 0) {
+        EXT2_ERROR("Failed to read inode %d", inode_number);
+        return 1;
+    }
+
     uint32_t * block_list = ext2_load_block_list(partition, inode_number);
-    uint32_t block_number = DIVIDE_ROUNDED_UP(inode->i_size, block_size);
-    
-    EXT2_DEBUG("Deallocating %d blocks for inode %d", block_number, inode_number);
     if (block_list == 0) {
         EXT2_ERROR("Failed to load block list for inode %d", inode_number);
         return 1;
     }
+
+    uint32_t block_number = DIVIDE_ROUNDED_UP(inode->i_size, block_size);
+    
+    EXT2_DEBUG("Deallocating %d blocks for inode %d", block_number, inode_number);
 
     if (ext2_deallocate_blocks(partition, block_list, block_number) != block_number) {
         EXT2_ERROR("Failed to deallocate blocks for inode %d", inode_number);
@@ -442,9 +605,39 @@ uint8_t ext2_delete_file_blocks(struct ext2_partition* partition, uint32_t inode
     return 0;
 }
 
+uint8_t ext2_delete_n_blocks(struct ext2_partition* partition, uint32_t inode_number, uint32_t blocks_to_remove) {
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_number);
+    if (inode == 0) {
+        EXT2_ERROR("Failed to read inode %d", inode_number);
+        return 1;
+    }
+
+    uint32_t * block_list = ext2_load_block_list(partition, inode_number);
+    if (block_list == 0) {
+        EXT2_ERROR("Failed to load block list for inode %d", inode_number);
+        return 1;
+    }
+    
+    EXT2_DEBUG("Deallocating %d blocks for inode %d", blocks_to_remove, inode_number);
+    if (ext2_deallocate_blocks(partition, block_list, blocks_to_remove) != blocks_to_remove) {
+        EXT2_ERROR("Failed to deallocate blocks for inode %d", inode_number);
+        free(block_list);
+        return 1;
+    }
+
+    free(block_list);
+    return 0;
+}
+
 uint8_t ext2_delete_inode(struct ext2_partition* partition, uint32_t inode_number) {
     struct ext2_inode_descriptor * full_inode = ext2_read_inode(partition, inode_number);
+    if (full_inode == 0) {
+        EXT2_ERROR("Failed to read inode %d", inode_number);
+        return 1;
+    }
+
     struct ext2_inode_descriptor_generic * inode = &(full_inode->id);
+    uint32_t original_mode = inode->i_mode;
     
     struct ext2_superblock * superblock = (struct ext2_superblock*)partition->sb;
     uint32_t inode_group = (inode_number - 1 ) / superblock->s_inodes_per_group;
@@ -453,6 +646,8 @@ uint8_t ext2_delete_inode(struct ext2_partition* partition, uint32_t inode_numbe
     inode->i_dtime = ext2_get_current_epoch();
     inode->i_links_count = 0;
     inode->i_size = 0;
+    inode->i_mode = 0;
+    inode->i_sectors = 0;
 
     if (ext2_write_inode(partition, inode_number, full_inode)) {
         EXT2_ERROR("Failed to delete inode %d", inode_number);
@@ -462,6 +657,11 @@ uint8_t ext2_delete_inode(struct ext2_partition* partition, uint32_t inode_numbe
     //Delete inode bitmap
 
     uint8_t * inode_bitmap_buffer = ext2_read_inode_bitmap(partition, inode_number);
+    if (inode_bitmap_buffer == 0) {
+        EXT2_ERROR("Failed to read inode bitmap %d", inode_number);
+        return 1;
+    }
+
     inode_bitmap_buffer[inode_index] = 0;
     if (ext2_write_inode_bitmap(partition, inode_number, inode_bitmap_buffer)) {
         EXT2_ERROR("Failed to delete inode bitmap %d", inode_number);
@@ -471,8 +671,10 @@ uint8_t ext2_delete_inode(struct ext2_partition* partition, uint32_t inode_numbe
 
     //Update group descriptor
     partition->gd[inode_group].bg_free_inodes_count++;
-    partition->gd[inode_group].bg_used_dirs_count--;
-
+    if (original_mode & INODE_TYPE_DIR) {
+        partition->gd[inode_group].bg_used_dirs_count--;
+    }
+    
     //Update superblock
     superblock->s_free_inodes_count++;
     
@@ -481,24 +683,10 @@ uint8_t ext2_delete_inode(struct ext2_partition* partition, uint32_t inode_numbe
 }
 
 void ext2_dump_inode(struct ext2_inode_descriptor_generic * inode) {
-    printf("Inode dump:\n");
-    printf("i_mode: %x\n", inode->i_mode);
-    printf("i_uid: %x\n", inode->i_uid);
-    printf("i_size: %x\n", inode->i_size);
-    printf("i_atime: %x\n", inode->i_atime);
-    printf("i_ctime: %x\n", inode->i_ctime);
-    printf("i_mtime: %x\n", inode->i_mtime);
-    printf("i_dtime: %x\n", inode->i_dtime);
-    printf("i_gid: %x\n", inode->i_gid);
-    printf("i_links_count: %x\n", inode->i_links_count);
-    printf("i_sectors: %x\n", inode->i_sectors);
-    printf("i_flags: %x\n", inode->i_flags);
-    printf("i_osd1: %x\n", inode->i_osd1);
-    printf("blocks: see below!\n");
-    printf("i_generation: %x\n", inode->i_generation);
-    printf("i_file_acl: %x\n", inode->i_file_acl);
-    printf("i_dir_acl: %x\n", inode->i_dir_acl);
-    printf("i_faddr: %x\n", inode->i_faddr);
+    printf("i_mode: %x i_uid: %x i_size: %x\n", inode->i_mode, inode->i_uid, inode->i_size);
+    printf("i_atime: %x i_ctime: %x i_mtime: %x i_dtime: %x\n", inode->i_atime, inode->i_ctime, inode->i_mtime, inode->i_dtime);
+    printf("i_gid: %x i_links_count: %x i_sectors: %x i_flags: %x i_osd1: %x\n", inode->i_gid, inode->i_links_count, inode->i_sectors, inode->i_flags, inode->i_osd1);
+    printf("i_generation: %x i_file_acl: %x i_dir_acl: %x i_faddr: %x\n", inode->i_generation, inode->i_file_acl, inode->i_dir_acl, inode->i_faddr);
 
     for (uint32_t i = 0; i < 15; i++) {
         printf("i_block[%d]: %x", i, inode->i_block[i]);
@@ -528,7 +716,7 @@ void ext2_dump_all_inodes(struct ext2_partition* partition, const char* root_pat
             continue;
         }
 
-        printf("Entry %d: %s, inode %d\n", i, entry->name, entry->inode);
+        printf("Entry %d: %s%s, inode %d\n", i, root_path, entry->name, entry->inode);
         ext2_dentry_walk_inodes_cb(partition, entry->inode);
 
         if (entry->file_type == EXT2_DIR_TYPE_DIRECTORY) {
@@ -537,6 +725,11 @@ void ext2_dump_all_inodes(struct ext2_partition* partition, const char* root_pat
             }
             
             char * new_path = malloc(strlen(root_path) + strlen(entry->name) + 2);
+            if (new_path == 0) {
+                EXT2_ERROR("Failed to allocate memory for path");
+                return;
+            }
+            
             strcpy(new_path, root_path);
             strcat(new_path, "/");
             strcat(new_path, entry->name);

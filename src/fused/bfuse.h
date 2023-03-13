@@ -50,12 +50,12 @@ void debug();
 struct mount* get_drive(const char *mount_point);
 
 //Register an entire file as a drive, size must be multiple of sector size
-void register_drive(const char * filename, const char* mount_point, u32 sector_size);
+uint8_t register_drive(const char * filename, const char* mount_point, u32 sector_size);
 
 //Register a part of a file as a drive.
 void register_drive_subsection(const char* filename, const char* mount_point, u32 sector_size, u64 starting_sector, u64 sector_count);
 
 //Unregister a drive
-void unregister_drive(const char *mount_point);
+uint8_t unregister_drive(const char *mount_point);
 
 #endif

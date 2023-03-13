@@ -15,8 +15,11 @@ int main(int argc, char *argv[]) {
     (void)argv;
     
     const char drive[]= "/mnt/hda";
-    ext2_set_debug_base("/mnt/c/Users/85562/FUSED/src/demofs/");
-    register_drive("/mnt/c/Users/85562/FUSED/build/img/dummy.img", drive, 512);
+    ext2_set_debug_base("/mnt/c/Users/xabier.iglesias/fuse/src/demofs/");
+    if (!register_drive("/mnt/c/Users/xabier.iglesias/fuse/build/img/dummy.img", drive, 512)) {
+        printf("Failed to register drive\n");
+        return 1;
+    }
     if (ext2_search(drive, 0)) {
         if (ext2_register_partition(drive, 0)) {
             printf("Registered ext2 partition\n");
@@ -61,21 +64,28 @@ int main(int argc, char *argv[]) {
             
             printf("Reading file /test.input\n");
             CATCH_ERROR(ext2_read_file(partition, "/test.input", buffer, file_size, TEST_SKIP));
+
+            printf("Getting file permissions\n");
+            uint16_t permissions = ext2_get_file_permissions(partition, "/test.input");
+            if (permissions == EXT2_RESULT_ERROR) {
+                printf("Failed to get file permissions\n");
+                return 1;
+            }
             
             printf("Creating file /patata.output\n");
-            CATCH_ERROR(ext2_create_file(partition, "/patata.output", EXT2_FILE_TYPE_REGULAR));
+            CATCH_ERROR(ext2_create_file(partition, "/patata.output", EXT2_FILE_TYPE_REGULAR, permissions));
             
-            printf("Writing file /patata.output\n");
+            printf("Writing file /patata.output, size=%ld\n", strlen(dummy_buffer));
             CATCH_ERROR(ext2_write_file(partition, "/patata.output", (uint8_t*)dummy_buffer, strlen(dummy_buffer), TEST_SKIP));
             
             printf("Creating file /test.output\n");
-            CATCH_ERROR(ext2_create_file(partition, "/test.output", EXT2_FILE_TYPE_REGULAR));
+            CATCH_ERROR(ext2_create_file(partition, "/test.output", EXT2_FILE_TYPE_REGULAR, permissions));
             
             printf("Creating directory /stuff\n");
-            CATCH_ERROR(ext2_create_file(partition, "/stuff", EXT2_FILE_TYPE_DIRECTORY));
+            CATCH_ERROR(ext2_create_file(partition, "/stuff", EXT2_FILE_TYPE_DIRECTORY, permissions));
 
             printf("Creating file /stuff/test.output\n");
-            CATCH_ERROR(ext2_create_file(partition, "/stuff/test.output", EXT2_FILE_TYPE_REGULAR));
+            CATCH_ERROR(ext2_create_file(partition, "/stuff/test.output", EXT2_FILE_TYPE_REGULAR, permissions));
 
             printf("Deleting file /patata.output\n");
             CATCH_ERROR(ext2_delete_file(partition, "/patata.output"));
@@ -92,14 +102,21 @@ int main(int argc, char *argv[]) {
             fwrite(buffer, 1, file_size, file);
             fclose(file);
 
-            printf("Final status of fs:\n");
-            ext2_list_directory(partition, "/");
+            uint32_t ino = ext2_get_inode_index(partition, "/stuff/test.output");
+            if (ino == EXT2_RESULT_ERROR) {
+                printf("Failed to get inode index\n");
+                return 1;
+            }
 
-            printf("Deleting directory /stuff\n");
-            CATCH_ERROR(ext2_delete_file(partition, "/stuff"));
-
+            printf("Truncating file /stuff/test.output\n");
+            CATCH_ERROR(ext2_resize_file(partition, ino, 1024));
         }
 
+        if (ext2_errors())
+            ext2_stacktrace();
+        else {
+            printf("Everything completed with no errors\n");
+        }   
         free(buffer);
     }
 }

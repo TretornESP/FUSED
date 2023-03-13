@@ -20,13 +20,13 @@ int64_t ext2_read_block(struct ext2_partition* partition, uint32_t block, uint8_
     uint32_t block_sectors = DIVIDE_ROUNDED_UP(block_size, partition->sector_size);
     uint32_t block_lba = (block * block_size) / partition->sector_size;
 
-    if (block) {
+    if (block > 0) {
         if (read_disk(partition->disk, destination_buffer, partition->lba + block_lba, block_sectors)) {
             EXT2_ERROR("Failed to read block %d", block);
             return EXT2_READ_FAILED;
         }
     } else {
-        EXT2_ERROR("Attempted to read block 0");
+        EXT2_ERROR("Attempted to read invalid block %d", block);
         return 0;
     }
 
@@ -300,6 +300,11 @@ uint32_t ext2_allocate_block(struct ext2_partition* partition) {
         }
 
         uint32_t * block_bitmap = (uint32_t *)malloc(block_size);
+        if (!block_bitmap) {
+            EXT2_ERROR("Failed to allocate block bitmap");
+            return 0;
+        }
+
         if (!ext2_read_block(partition, block_group->bg_block_bitmap, (uint8_t*)block_bitmap)) {
             EXT2_ERROR("Failed to read block bitmap");
             free(block_bitmap);
@@ -342,23 +347,23 @@ uint32_t ext2_deallocate_blocks(struct ext2_partition* partition, uint32_t *bloc
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
     uint32_t blocks_deallocated = 0;
     uint8_t * block_bitmap = malloc(block_size);
+    if (!block_bitmap) {
+        EXT2_ERROR("Failed to allocate block bitmap");
+        return 0;
+    }
 
-    for (uint32_t i = 0; i < block_number; i++) {
-        uint32_t block_group = (blocks[i] - 1) / ((struct ext2_superblock*)partition->sb)->s_blocks_per_group;
-        uint32_t block_index = (blocks[i] - 1) % ((struct ext2_superblock*)partition->sb)->s_blocks_per_group;
-        struct ext2_block_group_descriptor* block_group_descriptor = &((struct ext2_block_group_descriptor*)partition->gd)[block_group];
-        uint32_t block_bitmap_block = block_group_descriptor->bg_block_bitmap;
-        ext2_read_block(partition, block_bitmap_block, block_bitmap);
-        block_bitmap[block_index / 32] &= ~(1 << (block_index % 32));
-        ext2_write_block(partition, block_bitmap_block, block_bitmap);
+    //Start from the last block of the file
+    for (int i = block_number - 1; i >= 0; i--) {
+        if (!ext2_deallocate_block(partition, blocks[i])) {
+            EXT2_ERROR("Failed to deallocate block %d", blocks[i]);
+            free(block_bitmap);
+            return 0;
+        }
+
         blocks_deallocated++;
-        block_group_descriptor->bg_free_blocks_count++;
     }
 
     free(block_bitmap);
-
-    ((struct ext2_superblock*)partition->sb)->s_free_blocks_count += block_number;
-    
     ext2_flush_required(partition);
     return blocks_deallocated;
 }
@@ -377,6 +382,11 @@ uint32_t ext2_deallocate_block(struct ext2_partition* partition, uint32_t block)
     }
 
     uint32_t * block_bitmap = (uint32_t *)malloc(block_size);
+    if (!block_bitmap) {
+        EXT2_ERROR("Failed to allocate block bitmap");
+        return 0;
+    }
+    
     if (!ext2_read_block(partition, block_group_descriptor->bg_block_bitmap, (uint8_t*)block_bitmap)) {
         EXT2_ERROR("Failed to read block bitmap");
         free(block_bitmap);

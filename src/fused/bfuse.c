@@ -38,7 +38,7 @@ void add_mount(const char * mount_point, const char * file_name, int handle, u64
     mount_header = new_mount;
 }
 
-void remove_mount(const char * mount_point) {
+uint8_t remove_mount(const char * mount_point) {
     struct mount * current = mount_header;
     struct mount * previous = 0x0;
     while (current != 0x0) {
@@ -49,11 +49,13 @@ void remove_mount(const char * mount_point) {
                 previous->next = current->next;
             }
             __fuse_free(current);
-            return;
+            return 1;
         }
         previous = current;
         current = current->next;
     }
+
+    return 0;
 }
 
 struct mount * get_mount(const char * mount_point) {
@@ -115,7 +117,7 @@ error:
 }
 
 
-void register_drive(const char * filename, const char* mount_point, u32 sector_size) {
+uint8_t register_drive(const char * filename, const char* mount_point, u32 sector_size) {
     u64 sector_count = 0;
 #ifdef __EAGER
     u8 * reference;
@@ -124,13 +126,18 @@ void register_drive(const char * filename, const char* mount_point, u32 sector_s
 #endif
 
     reference = load_file(filename, sector_size, &sector_count);
+    if (reference == 0x0) {
+        __fuse_printf("Error loading file\n");
+        return 0;
+    }
     add_mount(mount_point, filename, reference, sector_size, 0, sector_count);
+    return 1;
 }
 
 void register_drive_subsection(const char* filename, const char* mount_point, u32 sector_size, u64 starting_sector, u64 sector_count) {
     add_mount(mount_point, filename, 0x0, sector_size, starting_sector, sector_count);
 }
 
-void unregister_drive(const char *mount_point) {
-    remove_mount(mount_point);
+uint8_t unregister_drive(const char *mount_point) {
+    return remove_mount(mount_point);
 }

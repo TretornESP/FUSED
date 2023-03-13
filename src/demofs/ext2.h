@@ -30,6 +30,22 @@
 #define EXT2_FILE_TYPE_SOCKET   6
 #define EXT2_FILE_TYPE_SYMLINK  7
 
+#define S_IRWXU 00700
+#define S_IRUSR 00400
+#define S_IWUSR 00200
+#define S_IXUSR 00100
+#define S_IRWXG 00070
+#define S_IRGRP 00040
+#define S_IWGRP 00020
+#define S_IXGRP 00010
+#define S_IRWXO 00007
+#define S_IROTH 00004
+#define S_IWOTH 00002
+#define S_IXOTH 00001
+#define S_ISUID 04000
+#define S_ISGID 02000
+#define S_ISVTX 01000
+
 
 
 struct ext2_partition * ext2_register_partition(const char* disk, uint32_t lba);
@@ -43,13 +59,15 @@ uint8_t ext2_unregister_partition(char letter);
 uint64_t ext2_get_file_size(struct ext2_partition* partition, const char* path);
 uint8_t ext2_list_directory(struct ext2_partition* partition, const char * path);
 uint8_t ext2_create_directory_entry(struct ext2_partition* partition, uint32_t inode_number, uint32_t child_inode, const char* name, uint32_t type);
-uint8_t ext2_create_file(struct ext2_partition * partition, const char* path, uint32_t type);
+uint8_t ext2_create_file(struct ext2_partition * partition, const char* path, uint32_t type, uint32_t permissions);
 uint8_t ext2_resize_file(struct ext2_partition* partition, uint32_t inode_index, uint32_t new_size);
+uint32_t ext2_get_inode_index(struct ext2_partition* partition, const char* path);
 uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uint8_t * destination_buffer, uint64_t size, uint64_t skip);
 uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, uint8_t * source_buffer, uint64_t size, uint64_t skip);
 uint8_t ext2_delete_file(struct ext2_partition* partition, const char * path);
 uint8_t ext2_set_debug_base(const char* base);
+uint16_t ext2_get_file_permissions(struct ext2_partition* partition, const char* path);
 uint8_t ext2_debug(struct ext2_partition* partition);
 uint8_t ext2_stacktrace();
-
+uint8_t ext2_errors();
 #endif

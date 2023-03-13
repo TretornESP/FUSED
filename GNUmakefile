@@ -17,6 +17,7 @@ BUILDHOME := $(ABSDIR)/build
 BUILDDIR := $(BUILDHOME)/bin
 OBJDIR := $(BUILDHOME)/lib
 IMGDIR := $(BUILDHOME)/img
+COMPATDIR := stuff
 
 MOUNTPOINT := /mnt/$(FUSE)
 TESTDIR := ./test
@@ -78,6 +79,22 @@ upload:
 	@git add .
 	@git commit
 	@git push origin main
+
+compatest:
+	@echo "Running base test..."
+	@make test
+	@sudo losetup -f $(IMGDIR)/$(DUMMY)
+	@make compatest2
+
+compatest2:
+	@echo "Running compatibility test..."
+	$(eval LOOP_DEV_PATH := $(shell losetup -a | grep $(DUMMY) | cut -d: -f1))
+	@echo Loop device path: $(LOOP_DEV_PATH)
+	@sudo mount $(LOOP_DEV_PATH) $(MOUNTPOINT)
+	@-sudo ls -lsart $(MOUNTPOINT)
+	@-sudo ls -lsart $(MOUNTPOINT)/$(COMPATDIR)
+	@sudo umount $(MOUNTPOINT)
+	@sudo losetup -d $(LOOP_DEV_PATH)
 
 .PHONY: test
 test:

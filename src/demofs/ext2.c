@@ -247,7 +247,7 @@ uint8_t ext2_list_directory(struct ext2_partition* partition, const char * path)
     return EXT2_RESULT_OK;
 }
 
-uint8_t ext2_create_file(struct ext2_partition * partition, const char* path, uint32_t type) {
+uint8_t ext2_create_file(struct ext2_partition * partition, const char* path, uint32_t type, uint32_t permissions) {
     EXT2_INFO("Creating file %s of type %s", path, ext2_file_type_names[type]);
     uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
 
@@ -279,7 +279,7 @@ uint8_t ext2_create_file(struct ext2_partition * partition, const char* path, ui
     }
 
     EXT2_DEBUG("Allocated inode %d", new_inode_index);
-    struct ext2_inode_descriptor * inode = ext2_initialize_inode(partition, new_inode_index, EXT2_TRANSLATE_INODE(type));
+    struct ext2_inode_descriptor * inode = ext2_initialize_inode(partition, new_inode_index, EXT2_TRANSLATE_INODE(type), permissions);
     EXT2_DEBUG("Initialized inode %d", new_inode_index);
 
     if (ext2_write_inode(partition, new_inode_index, inode)) {
@@ -295,7 +295,11 @@ uint8_t ext2_create_file(struct ext2_partition * partition, const char* path, ui
         }
 
         ext2_flush_partition(partition);
-        ext2_initialize_directory(partition, new_inode_index, parent_inode_index);
+
+        if (ext2_initialize_directory(partition, new_inode_index, parent_inode_index)) {
+            EXT2_ERROR("Failed to initialize directory");
+            return EXT2_RESULT_ERROR;
+        }
     }
 
     EXT2_DEBUG("Creating directory entry for inode %d", new_inode_index);
@@ -305,6 +309,41 @@ uint8_t ext2_create_file(struct ext2_partition * partition, const char* path, ui
     }
     ext2_list_directory(partition, path);
 
+    return EXT2_RESULT_OK;
+}
+
+uint8_t ext2_shrink_file(struct ext2_partition* partition, uint32_t inode_index, uint32_t new_size) {
+    EXT2_INFO("Shrinking file %d to %d", inode_index, new_size);
+    struct ext2_inode_descriptor * inode_full = (struct ext2_inode_descriptor*)ext2_read_inode(partition, inode_index);
+    struct ext2_inode_descriptor_generic * inode = &(inode_full->id);
+    uint32_t block_size = 1024 << (((struct ext2_superblock*)partition->sb)->s_log_block_size);
+    if (!inode) {
+        EXT2_ERROR("Failed to read inode");
+        return EXT2_RESULT_ERROR;
+    }
+
+    if (inode->i_size == new_size) {
+        EXT2_WARN("File is already of the requested size");
+        return EXT2_RESULT_OK;
+    }
+
+    uint32_t blocks_to_remove = (inode->i_size - new_size) / block_size; //We don't need to round up here, because we're removing blocks
+
+    EXT2_DEBUG("Resizing file to %d bytes, deallocating %d blocks", new_size, blocks_to_remove);
+    if (ext2_delete_n_blocks(partition, inode_index, blocks_to_remove)) {
+        EXT2_ERROR("Failed to deallocate blocks");
+        return EXT2_RESULT_ERROR;
+    }
+
+    inode->i_size = new_size;
+    inode->i_sectors = DIVIDE_ROUNDED_UP(new_size, partition->sector_size);
+
+    if (ext2_write_inode(partition, inode_index, inode_full)) {
+        EXT2_ERROR("Failed to write inode");
+        return EXT2_RESULT_ERROR;
+    }
+
+    ext2_flush_partition(partition);
     return EXT2_RESULT_OK;
 }
 
@@ -323,14 +362,12 @@ uint8_t ext2_resize_file(struct ext2_partition* partition, uint32_t inode_index,
     }
 
     if (inode->i_size > new_size) {
-        EXT2_ERROR("Shrinking files is not supported yet");
-        return EXT2_RESULT_ERROR;
+        return ext2_shrink_file(partition, inode_index, new_size);
     }
 
     uint32_t blocks_to_allocate = (new_size - inode->i_size) / block_size;
     if ((new_size - inode->i_size) % block_size) blocks_to_allocate++;
 
-    printf("Blocks to allocate: %d\n", blocks_to_allocate);
     EXT2_DEBUG("Resizing file to %d bytes, allocating %d blocks", new_size, blocks_to_allocate);
     if (ext2_allocate_blocks(partition, inode, blocks_to_allocate)) {
         EXT2_ERROR("Failed to allocate blocks");
@@ -338,6 +375,8 @@ uint8_t ext2_resize_file(struct ext2_partition* partition, uint32_t inode_index,
     }
 
     inode->i_size = new_size;
+    inode->i_sectors = DIVIDE_ROUNDED_UP(new_size, partition->sector_size);
+
     if (ext2_write_inode(partition, inode_index, (struct ext2_inode_descriptor*)inode)) {
         EXT2_ERROR("Failed to write inode");
         return EXT2_RESULT_ERROR;
@@ -380,6 +419,23 @@ uint8_t ext2_read_file(struct ext2_partition * partition, const char * path, uin
     memcpy(destination_buffer, full_buffer + skip, size);
     free(full_buffer);
     return EXT2_RESULT_OK;
+}
+
+uint32_t ext2_get_inode_index(struct ext2_partition* partition, const char* path) {
+    EXT2_INFO("Getting inode index for %s", path);
+    uint32_t inode_index = ext2_path_to_inode(partition, path);
+    if (!inode_index) {
+        EXT2_WARN("Failed to find inode");
+        return EXT2_RESULT_ERROR;
+    }
+
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
+    if (inode == 0) {
+        EXT2_ERROR("Failed to read inode");
+        return EXT2_RESULT_ERROR;
+    }
+
+    return inode_index;
 }
 
 uint8_t ext2_write_file(struct ext2_partition * partition, const char * path, uint8_t * source_buffer, uint64_t size, uint64_t skip) {
@@ -470,9 +526,9 @@ uint8_t ext2_delete_file(struct ext2_partition* partition, const char * path) {
 }
 
 uint8_t ext2_debug(struct ext2_partition* partition) {
-    ext2_dump_partition(partition);
-    ext2_dump_sb(partition);
-    ext2_dump_all_bgs(partition);
+    //ext2_dump_partition(partition);
+    //ext2_dump_sb(partition);
+    //ext2_dump_all_bgs(partition);
     ext2_dump_all_inodes(partition, "/"); //TODO: Get the root inode name from somewhere
     return EXT2_RESULT_OK;
 }
@@ -490,8 +546,27 @@ uint8_t ext2_stacktrace() {
     return EXT2_RESULT_OK;
 }
 
-/*
+uint8_t ext2_errors() {
+    return ext2_has_errors(EXT2_ERROR_WARN);
+}
 
+uint16_t ext2_get_file_permissions(struct ext2_partition* partition, const char* path) {
+    uint32_t inode_index = ext2_path_to_inode(partition, path);
+    if (!inode_index) {
+        EXT2_WARN("File doesn't exist");
+        return EXT2_RESULT_ERROR;
+    }
+
+    struct ext2_inode_descriptor_generic * inode = (struct ext2_inode_descriptor_generic *)ext2_read_inode(partition, inode_index);
+    if (inode->i_mode & INODE_TYPE_DIR) {
+        EXT2_ERROR("Trying to get permissions of a directory");
+        return EXT2_RESULT_ERROR;
+    }
+
+    return (inode->i_mode & 0x1FF);
+}
+
+/*
 Required functions:
 
 create_file ok
@@ -499,7 +574,6 @@ read_file ok (no skip)
 write_file ok (no skip) (no shrinking)
 delete_file ok
 modify_file_info (copy + delete)
-
 create_directory ok
 delete_directory ok
 read_directory ok
@@ -507,5 +581,4 @@ modify_directory_info (copy + delete)
 
 create_link
 delete_link
-
 */

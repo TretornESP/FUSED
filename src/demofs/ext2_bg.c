@@ -27,7 +27,11 @@ uint8_t ext2_flush_bg(struct ext2_partition* partition, struct ext2_block_group_
 
     uint32_t block_group_descriptors_size = DIVIDE_ROUNDED_UP(partition->group_number * sizeof(struct ext2_block_group_descriptor), partition->sector_size);
     uint32_t sectors_per_group = ((struct ext2_superblock*)(partition->sb))->s_blocks_per_group * (block_size / partition->sector_size);
-    write_disk(partition->disk, (uint8_t*)bg, partition->lba+(sectors_per_group*bgid)+partition->bgdt_block, block_group_descriptors_size);
+    if (write_disk(partition->disk, (uint8_t*)bg, partition->lba+(sectors_per_group*bgid)+partition->bgdt_block, block_group_descriptors_size) == OP_FAILURE) {
+        EXT2_ERROR("Failed to write block group descriptor table");
+        return 1;
+    }
+
     return 0;
 }
 
@@ -52,7 +56,12 @@ uint8_t ext2_dump_bg(struct ext2_partition* partition, struct ext2_block_group_d
         EXT2_ERROR("Failed to allocate block bitmap");
         return 1;
     }
-    ext2_read_block(partition, bg->bg_block_bitmap, block_bitmap);
+
+    if (ext2_read_block(partition, bg->bg_block_bitmap, block_bitmap) != 1) {
+        EXT2_ERROR("Failed to read block bitmap");
+        return 1;
+    }
+    
     for (uint32_t i = 0; i < block_size; i++) {
         printf("%02x ", block_bitmap[i]);
     }
@@ -64,7 +73,12 @@ uint8_t ext2_dump_bg(struct ext2_partition* partition, struct ext2_block_group_d
         EXT2_ERROR("Failed to allocate inode bitmap");
         return 1;
     }
-    ext2_read_block(partition, bg->bg_inode_bitmap, inode_bitmap);
+
+    if (ext2_read_block(partition, bg->bg_inode_bitmap, inode_bitmap) != 1) {
+        EXT2_ERROR("Failed to read inode bitmap");
+        return 1;
+    }
+    
     for (uint32_t i = 0; i < block_size; i++) {
         printf("%02x ", inode_bitmap[i]);
     }
