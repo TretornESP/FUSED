@@ -15,8 +15,8 @@ int main(int argc, char *argv[]) {
     (void)argv;
     
     const char drive[]= "/mnt/hda";
-    ext2_set_debug_base("/mnt/c/Users/85562/FUSED/src/demofs/");
-    if (!register_drive("/mnt/c/Users/85562/FUSED/build/img/dummy.img", drive, 512)) {
+    ext2_set_debug_base("/mnt/c/Users/xabier.iglesias/fuse/src/demofs/");
+    if (!register_drive("/mnt/c/Users/xabier.iglesias/fuse/build/img/dummy.img", drive, 512)) {
         printf("Failed to register drive\n");
         return 1;
     }

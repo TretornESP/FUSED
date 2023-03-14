@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 uint32_t ext2_unique_id = EXT2_UNIQUE_START;
 
@@ -25,6 +26,14 @@ void epoch_to_date(char* date, uint32_t epoch) {
 uint32_t ext2_get_current_epoch() {
     time_t t = time(0);
     return (uint32_t)t;
+}
+
+uint32_t ext2_get_uid() {
+    return (uint32_t)getuid();
+}
+
+uint32_t ext2_get_gid() {
+    return (uint32_t)getgid();
 }
 
 uint32_t ext2_get_unique_id() {

@@ -11,7 +11,6 @@
 
 
 #include "../fused/primitives.h"
-#include "../fused/auxiliary.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -159,13 +158,13 @@ struct ext2_inode_descriptor * ext2_initialize_inode(struct ext2_partition* part
     }
 
     inode->i_mode = type | permissions;
-    inode->i_uid = get_uid();   
+    inode->i_uid = ext2_get_uid();   
     inode->i_size = 0;
     inode->i_atime = ext2_get_current_epoch(); 
     inode->i_ctime = inode->i_atime;
     inode->i_mtime = inode->i_atime;
     inode->i_dtime = 0; 
-    inode->i_gid = get_gid();
+    inode->i_gid = ext2_get_gid();
     inode->i_links_count = 1;
     inode->i_sectors = 0;
     inode->i_flags = 0;

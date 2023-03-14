@@ -6,8 +6,6 @@
 #include "ext2_integrity.h"
 
 #include "../fused/primitives.h"
-#include "../fused/auxiliary.h"
-
 
 #include <stdio.h>
 #include <stdlib.h>

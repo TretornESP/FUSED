@@ -11,7 +11,6 @@
 #include "ext2_integrity.h"
 
 #include "../fused/primitives.h"
-#include "../fused/auxiliary.h"
 
 #include <stdlib.h>
 #include <string.h>

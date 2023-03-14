@@ -3,7 +3,6 @@
 #include "ext2_sb.h"
 
 #include "../fused/primitives.h"
-#include "../fused/auxiliary.h"
 
 #include <stdio.h>
 

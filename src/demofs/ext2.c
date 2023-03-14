@@ -13,7 +13,6 @@
 #include "ext2_integrity.h"
 
 #include "../fused/primitives.h"
-#include "../fused/auxiliary.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -542,8 +541,8 @@ uint16_t ext2_get_file_permissions(struct ext2_partition* partition, const char*
 Required functions:
 
 create_file ok
-read_file ok (no skip)
-write_file ok (no skip) (no shrinking)
+read_file ok
+write_file ok
 delete_file ok
 modify_file_info (copy + delete)
 create_directory ok
